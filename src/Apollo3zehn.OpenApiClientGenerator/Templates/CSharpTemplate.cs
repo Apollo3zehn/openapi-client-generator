@@ -26,6 +26,7 @@ public interface I{{{ClientName}}}Client
 {
 {{{SubClientInterfaceProperties}}}
 
+{{#Special_RefreshTokenSupport}}
     /// <summary>
     /// Signs in the user.
     /// </summary>
@@ -40,6 +41,7 @@ public interface I{{{ClientName}}}Client
     /// <param name="cancellationToken">A token to cancel the current operation.</param>
     /// <returns>A task.</returns>
     Task SignInAsync(string refreshToken, CancellationToken cancellationToken);
+{{/Special_RefreshTokenSupport}}
 
 {{#Special_NexusFeatures}}
     /// <summary>
@@ -61,14 +63,16 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {{#Special_NexusFeatures}}
     private const string ConfigurationHeaderKey = "{{{ConfigurationHeaderKey}}}";
 {{/Special_NexusFeatures}}
+{{#Special_RefreshTokenSupport}}
     private const string AuthorizationHeaderKey = "Authorization";
 
     private static string _tokenFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "{{{TokenFolderName}}}", "tokens");
     private static SemaphoreSlim _semaphoreSlim = new SemaphoreSlim(initialCount: 1, maxCount: 1);
 
     private TokenPair? _tokenPair;
-    private HttpClient _httpClient;
     private string? _tokenFilePath;
+{{/Special_RefreshTokenSupport}}
+    private HttpClient _httpClient;
 
 {{{SubClientFields}}}
     /// <summary>
@@ -94,13 +98,16 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {{{SubClientFieldAssignments}}}
     }
 
+{{#Special_RefreshTokenSupport}}
     /// <summary>
     /// Gets a value which indicates if the user is authenticated.
     /// </summary>
     public bool IsAuthenticated => _tokenPair is not null;
+{{/Special_RefreshTokenSupport}}
 
 {{{SubClientProperties}}}
 
+{{#Special_RefreshTokenSupport}}
     /// <inheritdoc />
     public void SignIn(string refreshToken)
     {
@@ -148,6 +155,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
         await RefreshTokenAsync(actualRefreshToken, cancellationToken);
     }
+{{/Special_RefreshTokenSupport}}
 
 {{#Special_NexusFeatures}}
     /// <inheritdoc />
@@ -179,6 +187,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         // process response
         if (!response.IsSuccessStatusCode)
         {
+{{#Special_RefreshTokenSupport}}
             // try to refresh the access token
             if (response.StatusCode == HttpStatusCode.Unauthorized && _tokenPair is not null)
             {
@@ -215,6 +224,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
                 if (signOut)
                     SignOut();
             }
+{{/Special_RefreshTokenSupport}}
 
             if (!response.IsSuccessStatusCode)
             {
@@ -273,6 +283,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         // process response
         if (!response.IsSuccessStatusCode)
         {
+{{#Special_RefreshTokenSupport}}
             // try to refresh the access token
             if (response.StatusCode == HttpStatusCode.Unauthorized && _tokenPair is not null)
             {
@@ -309,6 +320,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
                 if (signOut)
                     SignOut();
             }
+{{/Special_RefreshTokenSupport}}
 
             if (!response.IsSuccessStatusCode)
             {
@@ -381,6 +393,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         return requestMessage;
     }
 
+{{#Special_RefreshTokenSupport}}
     private void RefreshToken(string refreshToken)
     {
         _semaphoreSlim.Wait();
@@ -454,6 +467,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         _httpClient.DefaultRequestHeaders.Remove(AuthorizationHeaderKey);
         _tokenPair = default;
     }
+{{/Special_RefreshTokenSupport}}
 
     /// <inheritdoc />
     public void Dispose()
@@ -932,6 +946,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
 {{{SubClientSource}}}
 
+{{#Special_NexusFeatures}}
 internal class CastMemoryManager<TFrom, TTo> : MemoryManager<TTo>
      where TFrom : struct
      where TTo : struct
@@ -951,6 +966,7 @@ internal class CastMemoryManager<TFrom, TTo> : MemoryManager<TTo>
 
     public override void Unpin() => throw new NotSupportedException();
 }
+{{/Special_NexusFeatures}}
 
 /// <summary>
 /// A {{{ExceptionType}}}.

@@ -120,6 +120,7 @@ $@"    /// <summary>
             ExceptionType = settings.ExceptionType,
             ExceptionCodePrefix = settings.ExceptionCodePrefix,
             Models = models,
+            Special_RefreshTokenSupport = settings.Special_RefreshTokenSupport,
             Special_NexusFeatures = settings.Special_NexusFeatures
         };
 

@@ -19,14 +19,16 @@ class {{{ClientName}}}{{{Async}}}Client:
 {{#Special_NexusFeatures}}
     _configuration_header_key: str = "{{{ConfigurationHeaderKey}}}"
 {{/Special_NexusFeatures}}
+{{#Special_RefreshTokenSupport}}
     _authorization_header_key: str = "Authorization"
 
     _token_folder_path: str = os.path.join(str(Path.home()), "{{{TokenFolderName}}}", "tokens")
     _mutex: Lock = Lock()
 
     _token_pair: Optional[TokenPair]
-    _http_client: {{{Async}}}Client
     _token_file_path: Optional[str]
+{{/Special_RefreshTokenSupport}}
+    _http_client: {{{Async}}}Client
 
 {{{SubClientFields}}}
 
@@ -56,13 +58,16 @@ class {{{ClientName}}}{{{Async}}}Client:
 
 {{{SubClientFieldAssignments}}}
 
+{{#Special_RefreshTokenSupport}}
     @property
     def is_authenticated(self) -> bool:
         """Gets a value which indicates if the user is authenticated."""
         return self._token_pair is not None
+{{/Special_RefreshTokenSupport}}
 
 {{{SubClientProperties}}}
 
+{{#Special_RefreshTokenSupport}}
     {{{Def}}} sign_in(self, refresh_token: str):
         """Signs in the user.
 
@@ -89,6 +94,7 @@ class {{{ClientName}}}{{{Async}}}Client:
                 actual_refresh_token = refresh_token
                 
         {{{Await}}}self._refresh_token(actual_refresh_token)
+{{/Special_RefreshTokenSupport}}
 
 {{#Special_NexusFeatures}}
     def attach_configuration(self, configuration: Any) -> Any:
@@ -125,6 +131,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         # process response
         if not response.is_success:
             
+{{#Special_RefreshTokenSupport}}
             # try to refresh the access token
             if response.status_code == codes.UNAUTHORIZED and self._token_pair is not None:
 
@@ -150,6 +157,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 
                 if sign_out:
                     self._sign_out()
+{{/Special_RefreshTokenSupport}}
 
             if not response.is_success:
 
@@ -196,6 +204,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         return request_message
 
+{{#Special_RefreshTokenSupport}}
     {{{Def}}} _refresh_token(self, refresh_token: str):
         self._mutex.acquire()
 
@@ -232,6 +241,7 @@ class {{{ClientName}}}{{{Async}}}Client:
             del self._http_client.headers[self._authorization_header_key]
 
         self._token_pair = None
+{{/Special_RefreshTokenSupport}}
 
     # "disposable" methods
     {{{Def}}} __{{{Enter}}}__(self) -> {{{ClientName}}}{{{Async}}}Client:

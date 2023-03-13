@@ -7,5 +7,6 @@
         string ConfigurationHeaderKey,
         string ExceptionType,
         string ExceptionCodePrefix,
+        bool Special_RefreshTokenSupport,
         bool Special_NexusFeatures);
 }
