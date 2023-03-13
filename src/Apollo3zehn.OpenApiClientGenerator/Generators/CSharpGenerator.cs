@@ -1,16 +1,17 @@
 ﻿using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
+using Stubble.Core.Builders;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 
-namespace Nexus.ClientGenerator
+namespace Apollo3zehn.OpenApiClientGenerator
 {
     public class CSharpGenerator
     {
         public string Generate(OpenApiDocument document, GeneratorSettings settings)
         {
             var sourceTextBuilder = new StringBuilder();
+            var stubble = new StubbleBuilder().Build();
 
             // add clients
             var groupedClients = document.Paths
@@ -99,27 +100,30 @@ $@"    /// <summary>
             // Build final source text
             var basePath = Assembly.GetExecutingAssembly().Location;
 
-            var template = File
-                .ReadAllText(Path.Combine(basePath, "..", "Templates", "CSharpTemplate.cs"))
-                .Replace("{", "{{")
-                .Replace("}", "}}");
+            using var templateStreamReader = new StreamReader(Assembly
+                .GetExecutingAssembly()
+                .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.CSharpTemplate.cs")!);
 
-            template = Regex
-                .Replace(template, "{{{{([0-9]+)}}}}", match => $"{{{match.Groups[1].Value}}}");
+            var template = templateStreamReader.ReadToEnd();
 
-            return string.Format(
-                template,
-                settings.Namespace,
-                settings.ClientName,
-                "Nexus-Configuration",
-                "Authorization",
-                subClientFields,
-                subClientFieldAssignments,
-                subClientProperties,
-                subClientSource,
-                settings.ExceptionType,
-                models,
-                subClientInterfaceProperties);
+            var data = new
+            {
+                Namespace = settings.Namespace,
+                ClientName = settings.ClientName,
+                TokenFoldername = settings.TokenFolderName,
+                ConfigurationHeaderKey = settings.ConfigurationHeaderKey,
+                SubClientFields = subClientFields,
+                SubClientFieldAssignments = subClientFieldAssignments,
+                SubClientProperties = subClientProperties,
+                SubClientInterfaceProperties = subClientInterfaceProperties,
+                SubClientSource = subClientSource,
+                ExceptionType = settings.ExceptionType,
+                ExceptionCodePrefix = settings.ExceptionCodePrefix,
+                Models = models,
+                Special_NexusFeatures = settings.Special_NexusFeatures
+            };
+
+            return stubble.Render(template, data);
         }
 
         private void AppendSubClientSourceText(
@@ -145,7 +149,20 @@ public interface I{augmentedClassName}
 
                 foreach (var operation in entry.Value.Operations)
                 {
-                    AppendInterfaceMethodSourceText(operation.Key, operation.Value, sourceTextBuilder);
+                    AppendInterfaceMethodSourceText(
+                        operation.Key, 
+                        operation.Value, 
+                        sourceTextBuilder,
+                        async: false);
+
+                    sourceTextBuilder.AppendLine();
+
+                    AppendInterfaceMethodSourceText(
+                        operation.Key, 
+                        operation.Value, 
+                        sourceTextBuilder,
+                        async: true);
+                        
                     sourceTextBuilder.AppendLine();
                 }
             }
@@ -160,11 +177,11 @@ public interface I{augmentedClassName}
             sourceTextBuilder.AppendLine(
 $@"public class {augmentedClassName} : I{augmentedClassName}
 {{
-    private {settings.ClientName}Client _client;
+    private {settings.ClientName}Client ___client;
     
     internal {augmentedClassName}({settings.ClientName}Client client)
     {{
-        _client = client;
+        ___client = client;
     }}
 ");
 
@@ -179,7 +196,17 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
                         path: entry.Key,
                         operation.Key,
                         operation.Value,
-                        sourceTextBuilder);
+                        sourceTextBuilder,
+                        async: false);
+
+                    sourceTextBuilder.AppendLine();
+
+                    AppendImplementationMethodSourceText(
+                        path: entry.Key,
+                        operation.Key,
+                        operation.Value,
+                        sourceTextBuilder,
+                        async: true);
 
                     sourceTextBuilder.AppendLine();
                 }
@@ -191,18 +218,20 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
         private void AppendInterfaceMethodSourceText(
             OperationType operationType,
             OpenApiOperation operation,
-            StringBuilder sourceTextBuilder)
+            StringBuilder sourceTextBuilder,
+            bool async)
         {
             var signature = GetMethodSignature(
                 operationType,
                 operation,
+                async: async,
                 out var returnType,
                 out var parameters,
                 out var body);
 
             var preparedReturnType = string.IsNullOrWhiteSpace(returnType)
-                ? returnType
-                : $"<{returnType}>";
+                ? async ? "Task" : "void"
+                : async ? $"Task<{returnType}>" : returnType;
 
             sourceTextBuilder.AppendLine(
 $@"    /// <summary>
@@ -217,20 +246,23 @@ $@"    /// <summary>
             if (operation.RequestBody is not null && body is not null)
                 sourceTextBuilder.AppendLine($"    /// <param name=\"{body.Split(" ")[^1]}\">{operation.RequestBody.Description}</param>");
 
-            sourceTextBuilder.AppendLine($"    /// <param name=\"cancellationToken\">The token to cancel the current operation.</param>");
+            if (async)
+                sourceTextBuilder.AppendLine($"    /// <param name=\"cancellationToken\">The token to cancel the current operation.</param>");
 
-            sourceTextBuilder.AppendLine($"    Task{preparedReturnType} {signature};");
+            sourceTextBuilder.AppendLine($"    {preparedReturnType} {signature};");
         }
 
         private void AppendImplementationMethodSourceText(
             string path,
             OperationType operationType,
             OpenApiOperation operation,
-            StringBuilder sourceTextBuilder)
+            StringBuilder sourceTextBuilder,
+            bool async)
         {
             var signature = GetMethodSignature(
                 operationType,
                 operation,
+                async: async,
                 out var returnType,
                 out var parameters,
                 out var bodyParameter);
@@ -239,15 +271,18 @@ $@"    /// <summary>
                 .AppendLine("    /// <inheritdoc />");
 
             var isVoidReturnType = string.IsNullOrWhiteSpace(returnType);
-            var actualReturnType = isVoidReturnType ? "" : $"<{returnType}>";
+
+            var actualReturnType = isVoidReturnType 
+                ? async ? "Task": "void"
+                : async ? $"Task<{returnType}>" : returnType;
 
             sourceTextBuilder
-                .AppendLine($"    public Task{actualReturnType} {signature}")
+                .AppendLine($"    public {actualReturnType} {signature}")
                 .AppendLine($"    {{");
 
             sourceTextBuilder
-                .AppendLine("        var urlBuilder = new StringBuilder();")
-                .AppendLine($"        urlBuilder.Append(\"{path}\");");
+                .AppendLine("        var __urlBuilder = new StringBuilder();")
+                .AppendLine($"        __urlBuilder.Append(\"{path}\");");
 
             // path parameters
             var pathParameters = parameters
@@ -258,7 +293,7 @@ $@"    /// <summary>
             {
                 var parameterName = parameter.Item1.Split(" ")[1];
                 var parameterToStringCode = GetParameterToStringCode(parameterName, parameter.Item2.Schema);
-                sourceTextBuilder.AppendLine($"        urlBuilder.Replace(\"{{{parameterName}}}\", Uri.EscapeDataString({parameterToStringCode}));");
+                sourceTextBuilder.AppendLine($"        __urlBuilder.Replace(\"{{{parameterName}}}\", Uri.EscapeDataString({parameterToStringCode}));");
             }
 
             // query parameters
@@ -269,7 +304,7 @@ $@"    /// <summary>
             if (queryParameters.Any())
             {
                 sourceTextBuilder.AppendLine();
-                sourceTextBuilder.AppendLine("        var queryValues = new Dictionary<string, string>();");
+                sourceTextBuilder.AppendLine("        var __queryValues = new Dictionary<string, string>();");
                 sourceTextBuilder.AppendLine();
 
                 foreach (var parameter in queryParameters)
@@ -281,24 +316,24 @@ $@"    /// <summary>
                     if (parameter.Item2.Schema.Nullable)
                     {
                         sourceTextBuilder.AppendLine($"        if ({parameterName} is not null)");
-                        sourceTextBuilder.AppendLine($"            queryValues[\"{parameterName}\"] = {parameterValue};");
+                        sourceTextBuilder.AppendLine($"            __queryValues[\"{parameterName}\"] = {parameterValue};");
                     }
 
                     else
                     {
-                        sourceTextBuilder.AppendLine($"        queryValues[\"{parameterName}\"] = {parameterValue};");
+                        sourceTextBuilder.AppendLine($"        __queryValues[\"{parameterName}\"] = {parameterValue};");
                     }
 
                     sourceTextBuilder.AppendLine();
                 }
 
-                sourceTextBuilder.AppendLine("        var query = \"?\" + string.Join('&', queryValues.Select(entry => $\"{entry.Key}={entry.Value}\"));");
-                sourceTextBuilder.AppendLine("        urlBuilder.Append(query);");
+                sourceTextBuilder.AppendLine("        var __query = \"?\" + string.Join('&', __queryValues.Select(entry => $\"{entry.Key}={entry.Value}\"));");
+                sourceTextBuilder.AppendLine("        __urlBuilder.Append(__query);");
             }
 
             // url
             sourceTextBuilder.AppendLine();
-            sourceTextBuilder.Append("        var url = urlBuilder.ToString();");
+            sourceTextBuilder.Append("        var __url = __urlBuilder.ToString();");
             sourceTextBuilder.AppendLine();
 
             if (isVoidReturnType)
@@ -323,7 +358,12 @@ $@"    /// <summary>
                     _ => throw new Exception($"The media type {operation.RequestBody!.Content.Keys.First()} is not supported.")
                 };
 
-            sourceTextBuilder.AppendLine($"        return _client.InvokeAsync<{returnType}>(\"{operationType.ToString().ToUpper()}\", url, {acceptHeaderValue}, {contentTypeValue}, {content}, cancellationToken);");
+            if (async)
+                sourceTextBuilder.AppendLine($"        return ___client.InvokeAsync<{returnType}>(\"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content}, cancellationToken);");
+
+            else
+                sourceTextBuilder.AppendLine($"        {(isVoidReturnType ? "" : "return ")}___client.Invoke<{returnType}>(\"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content});");
+
             sourceTextBuilder.AppendLine($"    }}");
         }
 
@@ -461,6 +501,7 @@ $@"    /// <summary>
         private string GetMethodSignature(
             OperationType operationType,
             OpenApiOperation operation,
+            bool async,
             out string returnType,
             out IEnumerable<(string, OpenApiParameter)> parameters,
             out string? bodyParameter)
@@ -496,7 +537,9 @@ $@"    /// <summary>
 
             if (!operation.Parameters.Any() && operation.RequestBody is null)
             {
-                return $"{asyncMethodName}(CancellationToken cancellationToken = default)";
+                return async
+                    ? $"{asyncMethodName}(CancellationToken cancellationToken = default)"
+                    : $"{methodName}()";
             }
 
             else
@@ -540,7 +583,9 @@ $@"    /// <summary>
                         .OrderByDescending(parameter => parameter.Item2 is null || parameter.Item2.Required)
                         .Select(parameter => parameter.Item1));
 
-                return $"{asyncMethodName}({parametersString}, CancellationToken cancellationToken = default)";
+                return async
+                    ? $"{asyncMethodName}({parametersString}, CancellationToken cancellationToken = default)"
+                    : $"{methodName}({parametersString})";
             }
         }
     }

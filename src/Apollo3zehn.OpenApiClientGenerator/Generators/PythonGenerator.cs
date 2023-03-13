@@ -1,10 +1,10 @@
 ﻿using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
+using Stubble.Core.Builders;
 
-namespace Nexus.ClientGenerator
+namespace Apollo3zehn.OpenApiClientGenerator
 {
     record SubClientProperties(
         string Fields,
@@ -18,6 +18,7 @@ namespace Nexus.ClientGenerator
         public string Generate(OpenApiDocument document, GeneratorSettings settings)
         {
             var sourceTextBuilder = new StringBuilder();
+            var stubble = new StubbleBuilder().Build();
 
             // Models
             sourceTextBuilder.Clear();
@@ -34,82 +35,95 @@ namespace Nexus.ClientGenerator
 
             var models = sourceTextBuilder.ToString();
 
-            var basePath = Assembly.GetExecutingAssembly().Location;
+            using var clientTemplateStreamReader = new StreamReader(Assembly
+                .GetExecutingAssembly()
+                .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonClientTemplate.py")!);
 
-            var clientTemplate = File
-                .ReadAllText(Path.Combine(basePath, "..", "Templates", "PythonClientTemplate.py"))
-                .Replace("{", "{{")
-                .Replace("}", "}}");
-
-            clientTemplate = Regex
-                .Replace(clientTemplate, "{{{{([0-9]+)}}}}", match => $"{{{match.Groups[1].Value}}}");
+            var clientTemplate = clientTemplateStreamReader.ReadToEnd();
 
             // Build async client
             var asyncClients = GenerateClients(document, sourceTextBuilder, settings, async: true);
 
-            var asyncClient = string.Format(
-                clientTemplate,
-                settings.ClientName,
-                "Nexus-Configuration",
-                "Authorization",
-                asyncClients.Fields,
-                asyncClients.FieldAssignments,
-                asyncClients.Properties,
-                settings.ExceptionType,
-                "Async",
-                "async def",
-                "await ",
-                "aclose",
-                "aiter_bytes",
-                "asyncio.sleep",
-                "aenter",
-                "aexit",
-                "aread",
-                "async for");
+            var data = new
+            {
+                ClientName = settings.ClientName,
+                TokenFoldername = settings.TokenFolderName,
+                ConfigurationHeaderKey = settings.ConfigurationHeaderKey,
+                SubClientFields = asyncClients.Fields,
+                SubClientFieldAssignments = asyncClients.FieldAssignments,
+                SubClientProperties = asyncClients.Properties,
+                ExceptionType = settings.ExceptionType,
+                ExceptionCodePrefix = settings.ExceptionCodePrefix,
+                Async = "Async",
+                Def = "async def",
+                Await = "await ",
+                Aclose = "aclose",
+                Aiter_bytes = "aiter_bytes",
+                AsyncioSleep = "asyncio.sleep",
+                Enter = "aenter",
+                Exit = "aexit",
+                Read = "aread",
+                For = "async for",
+                Special_NexusFeatures = settings.Special_NexusFeatures
+            };
+
+            var asyncClient = stubble.Render(clientTemplate, data);
 
             // Build sync client
             var syncClients = GenerateClients(document, sourceTextBuilder, settings, async: false);
 
-            var syncClient = string.Format(
-                clientTemplate,
-                settings.ClientName,
-                "Nexus-Configuration",
-                "Authorization",
-                syncClients.Fields,
-                syncClients.FieldAssignments,
-                syncClients.Properties,
-                settings.ExceptionType,
-                "",
-                "def",
-                "",
-                "close",
-                "iter_bytes",
-                "time.sleep",
-                "enter",
-                "exit",
-                "read",
-                "for");
+            var data2 = new
+            {
+                ClientName = settings.ClientName,
+                TokenFoldername = settings.TokenFolderName,
+                ConfigurationHeaderKey = settings.ConfigurationHeaderKey,
+                SubClientFields = syncClients.Fields,
+                SubClientFieldAssignments = syncClients.FieldAssignments,
+                SubClientProperties = syncClients.Properties,
+                ExceptionType = settings.ExceptionType,
+                ExceptionCodePrefix = settings.ExceptionCodePrefix,
+                Async = "",
+                Def = "def",
+                Await = "",
+                Aclose = "close",
+                Aiter_bytes = "iter_bytes",
+                AsyncioSleep = "time.sleep",
+                Enter = "enter",
+                Exit = "exit",
+                Read = "read",
+                For = "for",
+                Special_NexusFeatures = settings.Special_NexusFeatures
+            };
+
+            var syncClient = stubble.Render(clientTemplate, data2);
 
             // Build final source text
 
-            var finalTemplate = File
-                .ReadAllText(Path.Combine(basePath, "..", "Templates", "PythonTemplate.py"))
-                .Replace("{", "{{")
-                .Replace("}", "}}");
+            using var encoderStreamReader = new StreamReader(Assembly
+                .GetExecutingAssembly()
+                .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonEncoder.py")!);
 
-            finalTemplate = Regex
-                .Replace(finalTemplate, "{{{{([0-9]+)}}}}", match => $"{{{match.Groups[1].Value}}}");
+            var encoder = encoderStreamReader.ReadToEnd();
 
-            return string.Format(
-                finalTemplate,
-                settings.Namespace,
-                settings.ClientName,
-                asyncClients.Source,
-                syncClients.Source,
-                settings.ExceptionType,
-                models,
-                asyncClient,
-                syncClient);
+            using var finalTemplateStreamReader = new StreamReader(Assembly
+                .GetExecutingAssembly()
+                .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonTemplate.py")!);
+
+            var finalTemplate = finalTemplateStreamReader.ReadToEnd();
+
+            var data3 = new
+            {
+                Encoder = encoder,
+                AsyncSubClientsSource = asyncClients.Source,
+                SyncSubClientsSource = syncClients.Source,
+                ExceptionType = settings.ExceptionType,
+                Models = models,
+                AsyncClient = asyncClient,
+                SyncClient = syncClient,
+                Special_NexusFeatures = settings.Special_NexusFeatures
+            };
+
+            return stubble.Render(finalTemplate, data3);
         }
 
         private SubClientProperties GenerateClients(OpenApiDocument document, StringBuilder sourceTextBuilder, GeneratorSettings settings, bool async)
@@ -205,10 +219,10 @@ $@"    @property
 $@"class {augmentedClassName}:
     """"""Provides methods to interact with {Shared.SplitCamelCase(className).ToLower()}.""""""
 
-    _client: {settings.ClientName}{prefix}Client
+    ___client: {settings.ClientName}{prefix}Client
     
     def __init__(self, client: {settings.ClientName}{prefix}Client):
-        self._client = client
+        self.___client = client
 ");
 
             foreach (var entry in methodMap)
@@ -265,7 +279,7 @@ $@"class {augmentedClassName}:
 ");
 
             sourceTextBuilder
-                .AppendLine($"        url = \"{path}\"");
+                .AppendLine($"        __url = \"{path}\"");
 
             // path parameters
             var pathParameters = parameters
@@ -276,7 +290,7 @@ $@"class {augmentedClassName}:
             {
                 var originalParameterName = parameter.Item2.Name;
                 var parameterName = parameter.Item1.Split(":")[0];
-                sourceTextBuilder.AppendLine($"        url = url.replace(\"{{{originalParameterName}}}\", quote(str({parameterName}), safe=\"\"))");
+                sourceTextBuilder.AppendLine($"        __url = __url.replace(\"{{{originalParameterName}}}\", quote(str({parameterName}), safe=\"\"))");
             }
 
             // query parameters
@@ -287,7 +301,7 @@ $@"class {augmentedClassName}:
             if (queryParameters.Any())
             {
                 sourceTextBuilder.AppendLine();
-                sourceTextBuilder.AppendLine("        queryValues: dict[str, str] = {}");
+                sourceTextBuilder.AppendLine("        __query_values: dict[str, str] = {}");
                 sourceTextBuilder.AppendLine();
 
                 foreach (var parameter in queryParameters)
@@ -299,19 +313,19 @@ $@"class {augmentedClassName}:
                     if (parameter.Item2.Schema.Nullable)
                     {
                         sourceTextBuilder.AppendLine($"        if {parameterName} is not None:");
-                        sourceTextBuilder.AppendLine($"            queryValues[\"{originalParameterName}\"] = {parameterValue}");
+                        sourceTextBuilder.AppendLine($"            __query_values[\"{originalParameterName}\"] = {parameterValue}");
                     }
 
                     else
                     {
-                        sourceTextBuilder.AppendLine($"        queryValues[\"{originalParameterName}\"] = {parameterValue}");
+                        sourceTextBuilder.AppendLine($"        __query_values[\"{originalParameterName}\"] = {parameterValue}");
                     }
 
                     sourceTextBuilder.AppendLine();
                 }
 
-                sourceTextBuilder.AppendLine("        query: str = \"?\" + \"&\".join(f\"{key}={value}\" for (key, value) in queryValues.items())");
-                sourceTextBuilder.AppendLine("        url += query");
+                sourceTextBuilder.AppendLine("        __query: str = \"?\" + \"&\".join(f\"{key}={value}\" for (key, value) in __query_values.items())");
+                sourceTextBuilder.AppendLine("        __url += __query");
             }
 
             if (isVoidReturnType)
@@ -337,7 +351,7 @@ $@"class {augmentedClassName}:
                 };
 
             sourceTextBuilder.AppendLine();
-            sourceTextBuilder.AppendLine($"        return self._client._invoke({returnType}, \"{operationType.ToString().ToUpper()}\", url, {acceptHeaderValue}, {contentTypeValue}, {content})");
+            sourceTextBuilder.AppendLine($"        return self.___client._invoke({returnType}, \"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content})");
         }
 
         private void AppendModelSourceText(

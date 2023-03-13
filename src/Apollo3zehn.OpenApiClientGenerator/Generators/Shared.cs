@@ -1,6 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 
-namespace Nexus.ClientGenerator
+namespace Apollo3zehn.OpenApiClientGenerator
 {
     public class Shared
     {

@@ -14,6 +14,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="openapi.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Apollo3zehn.OpenApiClientGenerator\Apollo3zehn.OpenApiClientGenerator.csproj" />
   </ItemGroup>
 

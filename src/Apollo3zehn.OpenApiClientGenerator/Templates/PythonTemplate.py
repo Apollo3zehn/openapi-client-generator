@@ -1,16 +1,13 @@
 ﻿# pyright: reportPrivateUsage=false
 
-# 0 = Namespace
-# 1 = ClientName
-# 2 = AsyncSubClientSource
-# 3 = SyncSubClientSource
-# 4 = ExceptionType
-# 5 = Model
-# 6 = AsyncClient 
-# 7 = SyncClient
-
 # Python <= 3.9
 from __future__ import annotations
+
+from typing import TypeVar
+
+T = TypeVar("T")
+
+{{{Encoder}}}
 
 import asyncio
 import base64
@@ -27,17 +24,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock
 from typing import (Any, AsyncIterable, Awaitable, Callable, Iterable,
-                    Optional, Type, TypeVar, Union, cast)
+                    Optional, Type, Union, cast)
 from urllib.parse import quote
 from uuid import UUID
 from zipfile import ZipFile
 
 from httpx import AsyncClient, Client, Request, Response, codes
-
-from ._encoder import (JsonEncoder, JsonEncoderOptions, to_camel_case,
-                       to_snake_case)
-
-T = TypeVar("T")
 
 def _to_string(value: Any) -> str:
 
@@ -58,8 +50,8 @@ _json_encoder_options: JsonEncoderOptions = JsonEncoderOptions(
 _json_encoder_options.encoders[Enum] = lambda value: to_camel_case(value.name)
 _json_encoder_options.decoders[Enum] = lambda typeCls, value: cast(Type[Enum], typeCls)[to_snake_case(value).upper()]
 
-class {{4}}(Exception):
-    """A {{4}}."""
+class {{{ExceptionType}}}(Exception):
+    """A {{{ExceptionType}}}."""
 
     def __init__(self, status_code: str, message: str):
         self.status_code = status_code
@@ -71,11 +63,11 @@ class {{4}}(Exception):
     message: str
     """The exception message."""
 
-{{5}}
-{{2}}
-{{3}}
-# high-level dataclasses
+{{{Models}}}
+{{{AsyncSubClientsSource}}}
+{{{SyncSubClientsSource}}}
 
+{{#Special_NexusFeatures}}
 @dataclass(frozen=True)
 class DataResponse:
     """
@@ -107,6 +99,7 @@ class DataResponse:
 
     values: array[float]
     """The data."""
+{{/Special_NexusFeatures}}
 
-{{6}}
-{{7}}
+{{{AsyncClient}}}
+{{{SyncClient}}}
