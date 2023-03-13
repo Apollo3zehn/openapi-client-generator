@@ -8,14 +8,24 @@ namespace Apollo3zehn.OpenApiClientGenerator;
 
 public class CSharpGenerator
 {
-    public string Generate(OpenApiDocument document, GeneratorSettings settings)
+    private readonly GeneratorSettings _settings;
+    private List<string> _additionalModels;
+
+    public CSharpGenerator(GeneratorSettings settings)
     {
+        _settings = settings;
+    }
+
+    public string Generate(OpenApiDocument document)
+    {
+        _additionalModels = new();
         var sourceTextBuilder = new StringBuilder();
         var stubble = new StubbleBuilder().Build();
 
         // add clients
         var groupedClients = document.Paths
-            .GroupBy(path => path.Value.Operations.First().Value.OperationId.Split(new[] { '_' }, 2).First());
+            .SelectMany(path => path.Value.Operations.First().Value.Tags.Select(tag => (path, tag)))
+            .GroupBy(value => value.tag.Name);
 
         var subClients = groupedClients.Select(group => group.Key);
 
@@ -73,9 +83,8 @@ $@"    /// <summary>
         {
             AppendSubClientSourceText(
                 clientGroup.Key,
-                clientGroup.ToDictionary(entry => entry.Key, entry => entry.Value),
-                sourceTextBuilder,
-                settings);
+                clientGroup.ToDictionary(entry => entry.path.Key, entry => entry.path.Value),
+                sourceTextBuilder);
 
             sourceTextBuilder.AppendLine();
         }
@@ -95,6 +104,12 @@ $@"    /// <summary>
             sourceTextBuilder.AppendLine();
         }
 
+        foreach (var modelText in _additionalModels)
+        {
+            sourceTextBuilder.Append(modelText);
+            sourceTextBuilder.AppendLine();
+        }
+
         var models = sourceTextBuilder.ToString();
 
         // Build final source text
@@ -108,20 +123,20 @@ $@"    /// <summary>
 
         var data = new
         {
-            Namespace = settings.Namespace,
-            ClientName = settings.ClientName,
-            TokenFoldername = settings.TokenFolderName,
-            ConfigurationHeaderKey = settings.ConfigurationHeaderKey,
+            Namespace = _settings.Namespace,
+            ClientName = _settings.ClientName,
+            TokenFoldername = _settings.TokenFolderName,
+            ConfigurationHeaderKey = _settings.ConfigurationHeaderKey,
             SubClientFields = subClientFields,
             SubClientFieldAssignments = subClientFieldAssignments,
             SubClientProperties = subClientProperties,
             SubClientInterfaceProperties = subClientInterfaceProperties,
             SubClientSource = subClientSource,
-            ExceptionType = settings.ExceptionType,
-            ExceptionCodePrefix = settings.ExceptionCodePrefix,
+            ExceptionType = _settings.ExceptionType,
+            ExceptionCodePrefix = _settings.ExceptionCodePrefix,
             Models = models,
-            Special_RefreshTokenSupport = settings.Special_RefreshTokenSupport,
-            Special_NexusFeatures = settings.Special_NexusFeatures
+            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
+            Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
         return stubble.Render(template, data);
@@ -130,8 +145,7 @@ $@"    /// <summary>
     private void AppendSubClientSourceText(
         string className,
         IDictionary<string, OpenApiPathItem> methodMap,
-        StringBuilder sourceTextBuilder,
-        GeneratorSettings settings)
+        StringBuilder sourceTextBuilder)
     {
         var augmentedClassName = className + "Client";
 
@@ -151,6 +165,7 @@ public interface I{augmentedClassName}
             foreach (var operation in entry.Value.Operations)
             {
                 AppendInterfaceMethodSourceText(
+                    path: entry.Key,
                     operation.Key,
                     operation.Value,
                     sourceTextBuilder,
@@ -159,6 +174,7 @@ public interface I{augmentedClassName}
                 sourceTextBuilder.AppendLine();
 
                 AppendInterfaceMethodSourceText(
+                    path: entry.Key,
                     operation.Key,
                     operation.Value,
                     sourceTextBuilder,
@@ -178,9 +194,9 @@ public interface I{augmentedClassName}
         sourceTextBuilder.AppendLine(
 $@"public class {augmentedClassName} : I{augmentedClassName}
 {{
-    private {settings.ClientName}Client ___client;
+    private {_settings.ClientName}Client ___client;
     
-    internal {augmentedClassName}({settings.ClientName}Client client)
+    internal {augmentedClassName}({_settings.ClientName}Client client)
     {{
         ___client = client;
     }}
@@ -217,12 +233,14 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
     }
 
     private void AppendInterfaceMethodSourceText(
+        string path,
         OperationType operationType,
         OpenApiOperation operation,
         StringBuilder sourceTextBuilder,
         bool async)
     {
         var signature = GetMethodSignature(
+            path,
             operationType,
             operation,
             async: async,
@@ -261,6 +279,7 @@ $@"    /// <summary>
         bool async)
     {
         var signature = GetMethodSignature(
+            path,
             operationType,
             operation,
             async: async,
@@ -461,13 +480,13 @@ $@"    /// <summary>
         };
     }
 
-    private string GetType(OpenApiSchema schema)
+    private string GetType(OpenApiSchema schema, bool isRequired = true)
     {
         string type;
 
         if (schema.Reference is null)
         {
-            type = (schema.Type, schema.Format, schema.AdditionalPropertiesAllowed) switch
+            type = (schema.Type, schema.Format, schema.AdditionalProperties) switch
             {
                 (null, _, _) => schema.OneOf.Count switch
                 {
@@ -477,14 +496,17 @@ $@"    /// <summary>
                 },
                 ("boolean", _, _) => "bool",
                 ("number", "double", _) => "double",
+                ("number", _, _) => "double",
                 ("integer", "int32", _) => "int",
+                ("integer", _, _) => "int",
                 ("string", "uri", _) => "Uri",
                 ("string", "guid", _) => "Guid",
                 ("string", "duration", _) => "TimeSpan",
                 ("string", "date-time", _) => "DateTime",
                 ("string", _, _) => "string",
                 ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items)}>",
-                ("object", _, true) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties)}>",
+                ("object", _, null) => $"IReadOnlyDictionary<string, {GetAnonymousType(schema)}>",
+                ("object", _, _) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties)}>",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
         }
@@ -494,12 +516,35 @@ $@"    /// <summary>
             type = schema.Reference.Id;
         }
 
-        return schema.Nullable
+        return (schema.Nullable || !isRequired)
             ? $"{type}?"
             : type;
     }
 
+    private string GetAnonymousType(OpenApiSchema schema)
+    {
+        var id = RandomString(10);
+        var stringBuilder = new StringBuilder();
+
+        AppendModelSourceText(modelName: id, schema, stringBuilder);
+
+        var modelText = stringBuilder.ToString();
+        _additionalModels.Add(modelText);
+
+        return id;
+    }
+
+    private static Random random = new Random();
+
+    private static string RandomString(int length)
+    {
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        return new string(Enumerable.Repeat(chars, length)
+            .Select(s => s[random.Next(s.Length)]).ToArray());
+    }
+
     private string GetMethodSignature(
+        string path,
         OperationType operationType,
         OpenApiOperation operation,
         bool async,
@@ -513,23 +558,25 @@ $@"    /// <summary>
             operationType == OperationType.Delete))
             throw new Exception("Only get, put, post or delete operations are supported.");
 
-        var methodName = operation.OperationId.Split(new[] { '_' }, 2)[1];
+        var methodName = _settings.GetOperationName(path, operationType, operation);
         var asyncMethodName = methodName + "Async";
 
-        if (operation.Responses.Count != 1)
-            throw new Exception("Only a single response is supported.");
+        // if (operation.Responses.Count != 1)
+        //     throw new Exception("Only a single response is supported.");
 
         var responseEntry = operation.Responses.First();
         var responseType = responseEntry.Key;
         var response = responseEntry.Value;
 
-        if (responseType != "200")
-            throw new Exception("Only response type '200' is supported.");
+        if (!(responseType == "200" || responseType == "201"))
+            throw new Exception("Only response type '200' or '201' is supported.");
 
         returnType = response.Content.Count switch
         {
             0 => string.Empty,
             1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
+            // TODO this is a workaround
+            2 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
             _ => throw new Exception("Only zero or one response contents are supported.")
         };
 
@@ -545,12 +592,13 @@ $@"    /// <summary>
 
         else
         {
-            if (operation.Parameters.Any(parameter
-                => parameter.In != ParameterLocation.Path && parameter.In != ParameterLocation.Query))
-                throw new Exception("Only path or query parameters are supported.");
+            // if (operation.Parameters.Any(parameter
+            //     => parameter.In != ParameterLocation.Path && parameter.In != ParameterLocation.Query))
+            //     throw new Exception("Only path or query parameters are supported.");
 
             parameters = operation.Parameters
-                .Select(parameter => ($"{GetType(parameter.Schema)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
+                .Where(parameter => parameter.In == ParameterLocation.Query || parameter.In == ParameterLocation.Path)
+                .Select(parameter => ($"{GetType(parameter.Schema, parameter.Required)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
 
             if (operation.RequestBody is not null)
             {
@@ -562,15 +610,24 @@ $@"    /// <summary>
                 if (!(content.Key == "application/json" || content.Key == "application/octet-stream"))
                     throw new Exception("Only body content media types application/json or application/octet-stream are supported.");
 
-                if (!operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
-                    throw new Exception("x-name extension is missing.");
+                string type;
+                string name;
 
+                if (operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
+                {
+                    if (value is not OpenApiString openApiString)
+                        throw new Exception("The actual x-name value type is not supported.");
 
-                if (value is not OpenApiString name)
-                    throw new Exception("The actual x-name value type is not supported.");
+                    type = GetType(content.Key, content.Value);
+                    name = openApiString.Value;
+                }
+                else
+                {
+                    type = "JsonElement";
+                    name = "body";
+                }
 
-                var type = GetType(content.Key, content.Value);
-                bodyParameter = $"{type} {name.Value}";
+                bodyParameter = $"{type} {name}";
             }
 
             var parametersString = bodyParameter == default

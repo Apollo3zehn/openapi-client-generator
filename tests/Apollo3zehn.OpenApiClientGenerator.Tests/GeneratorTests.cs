@@ -22,14 +22,16 @@ public class GeneratorTests
             ConfigurationHeaderKey: "Nexus-Configuration",
             ExceptionType: "NexusException",
             ExceptionCodePrefix: "N",
+            GetOperationName: (path, type, operation) => operation.OperationId.Split(new[] { '_' }, 2)[1],
+            Special_RefreshTokenSupport: true,
             Special_NexusFeatures: true);
 
-        var csharpGenerator = new CSharpGenerator();
-        var pythonGenerator = new PythonGenerator();
+        var csharpGenerator = new CSharpGenerator(settings);
+        var pythonGenerator = new PythonGenerator(settings);
 
         // Act
-        var csharpCode = csharpGenerator.Generate(document, settings);
-        var pythonCode = pythonGenerator.Generate(document, settings);
+        var csharpCode = csharpGenerator.Generate(document);
+        var pythonCode = pythonGenerator.Generate(document);
 
         // Assert
 

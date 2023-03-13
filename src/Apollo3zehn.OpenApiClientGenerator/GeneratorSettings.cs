@@ -1,4 +1,6 @@
-﻿namespace Apollo3zehn.OpenApiClientGenerator
+﻿using Microsoft.OpenApi.Models;
+
+namespace Apollo3zehn.OpenApiClientGenerator
 {
     public record GeneratorSettings(
         string? Namespace,
@@ -7,6 +9,7 @@
         string ConfigurationHeaderKey,
         string ExceptionType,
         string ExceptionCodePrefix,
+        Func<string, OperationType, OpenApiOperation, string> GetOperationName,
         bool Special_RefreshTokenSupport,
         bool Special_NexusFeatures);
 }
