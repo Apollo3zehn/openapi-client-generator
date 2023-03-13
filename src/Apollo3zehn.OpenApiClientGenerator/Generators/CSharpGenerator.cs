@@ -1,180 +1,180 @@
-﻿using Microsoft.OpenApi.Any;
+﻿using System.Reflection;
+using System.Text;
+using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Stubble.Core.Builders;
-using System.Reflection;
-using System.Text;
 
-namespace Apollo3zehn.OpenApiClientGenerator
+namespace Apollo3zehn.OpenApiClientGenerator;
+
+public class CSharpGenerator
 {
-    public class CSharpGenerator
+    public string Generate(OpenApiDocument document, GeneratorSettings settings)
     {
-        public string Generate(OpenApiDocument document, GeneratorSettings settings)
+        var sourceTextBuilder = new StringBuilder();
+        var stubble = new StubbleBuilder().Build();
+
+        // add clients
+        var groupedClients = document.Paths
+            .GroupBy(path => path.Value.Operations.First().Value.OperationId.Split(new[] { '_' }, 2).First());
+
+        var subClients = groupedClients.Select(group => group.Key);
+
+        // SubClientFields
+        sourceTextBuilder.Clear();
+
+        foreach (var subClient in subClients)
         {
-            var sourceTextBuilder = new StringBuilder();
-            var stubble = new StubbleBuilder().Build();
+            sourceTextBuilder.AppendLine($"    private {subClient}Client _{Shared.FirstCharToLower(subClient)};");
+        }
 
-            // add clients
-            var groupedClients = document.Paths
-                .GroupBy(path => path.Value.Operations.First().Value.OperationId.Split(new[] { '_' }, 2).First());
+        var subClientFields = sourceTextBuilder.ToString();
 
-            var subClients = groupedClients.Select(group => group.Key);
+        // SubClientFieldAssignments
+        sourceTextBuilder.Clear();
 
-            // SubClientFields
-            sourceTextBuilder.Clear();
+        foreach (var subClient in subClients)
+        {
+            sourceTextBuilder.AppendLine($"        _{Shared.FirstCharToLower(subClient)} = new {subClient}Client(this);");
+        }
 
-            foreach (var subClient in subClients)
-            {
-                sourceTextBuilder.AppendLine($"    private {subClient}Client _{Shared.FirstCharToLower(subClient)};");
-            }
+        var subClientFieldAssignments = sourceTextBuilder.ToString();
 
-            var subClientFields = sourceTextBuilder.ToString();
+        // SubClientProperties
+        sourceTextBuilder.Clear();
 
-            // SubClientFieldAssignments
-            sourceTextBuilder.Clear();
+        foreach (var subClient in subClients)
+        {
+            sourceTextBuilder.AppendLine("    /// <inheritdoc />");
+            sourceTextBuilder.AppendLine($"    public I{subClient}Client {subClient} => _{Shared.FirstCharToLower(subClient)};");
+            sourceTextBuilder.AppendLine();
+        }
 
-            foreach (var subClient in subClients)
-            {
-                sourceTextBuilder.AppendLine($"        _{Shared.FirstCharToLower(subClient)} = new {subClient}Client(this);");
-            }
+        var subClientProperties = sourceTextBuilder.ToString();
 
-            var subClientFieldAssignments = sourceTextBuilder.ToString();
+        // SubClientInterfaceProperties
+        sourceTextBuilder.Clear();
 
-            // SubClientProperties
-            sourceTextBuilder.Clear();
-
-            foreach (var subClient in subClients)
-            {
-                sourceTextBuilder.AppendLine("    /// <inheritdoc />");
-                sourceTextBuilder.AppendLine($"    public I{subClient}Client {subClient} => _{Shared.FirstCharToLower(subClient)};");
-                sourceTextBuilder.AppendLine();
-            }
-
-            var subClientProperties = sourceTextBuilder.ToString();
-
-            // SubClientInterfaceProperties
-            sourceTextBuilder.Clear();
-
-            foreach (var subClient in subClients)
-            {
-                sourceTextBuilder.AppendLine(
+        foreach (var subClient in subClients)
+        {
+            sourceTextBuilder.AppendLine(
 $@"    /// <summary>
     /// Gets the <see cref=""I{subClient}Client""/>.
     /// </summary>");
-                sourceTextBuilder.AppendLine($"    I{subClient}Client {subClient} {{ get; }}");
-                sourceTextBuilder.AppendLine();
-            }
-
-            var subClientInterfaceProperties = sourceTextBuilder.ToString();
-
-            // SubClientSource
-            sourceTextBuilder.Clear();
-
-            foreach (var clientGroup in groupedClients)
-            {
-                AppendSubClientSourceText(
-                    clientGroup.Key,
-                    clientGroup.ToDictionary(entry => entry.Key, entry => entry.Value),
-                    sourceTextBuilder,
-                    settings);
-
-                sourceTextBuilder.AppendLine();
-            }
-
-            var subClientSource = sourceTextBuilder.ToString();
-
-            // Models
-            sourceTextBuilder.Clear();
-
-            foreach (var schema in document.Components.Schemas)
-            {
-                AppendModelSourceText(
-                    schema.Key,
-                    schema.Value,
-                    sourceTextBuilder);
-
-                sourceTextBuilder.AppendLine();
-            }
-
-            var models = sourceTextBuilder.ToString();
-
-            // Build final source text
-            var basePath = Assembly.GetExecutingAssembly().Location;
-
-            using var templateStreamReader = new StreamReader(Assembly
-                .GetExecutingAssembly()
-                .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.CSharpTemplate.cs")!);
-
-            var template = templateStreamReader.ReadToEnd();
-
-            var data = new
-            {
-                Namespace = settings.Namespace,
-                ClientName = settings.ClientName,
-                TokenFoldername = settings.TokenFolderName,
-                ConfigurationHeaderKey = settings.ConfigurationHeaderKey,
-                SubClientFields = subClientFields,
-                SubClientFieldAssignments = subClientFieldAssignments,
-                SubClientProperties = subClientProperties,
-                SubClientInterfaceProperties = subClientInterfaceProperties,
-                SubClientSource = subClientSource,
-                ExceptionType = settings.ExceptionType,
-                ExceptionCodePrefix = settings.ExceptionCodePrefix,
-                Models = models,
-                Special_NexusFeatures = settings.Special_NexusFeatures
-            };
-
-            return stubble.Render(template, data);
+            sourceTextBuilder.AppendLine($"    I{subClient}Client {subClient} {{ get; }}");
+            sourceTextBuilder.AppendLine();
         }
 
-        private void AppendSubClientSourceText(
-            string className,
-            IDictionary<string, OpenApiPathItem> methodMap,
-            StringBuilder sourceTextBuilder,
-            GeneratorSettings settings)
-        {
-            var augmentedClassName = className + "Client";
+        var subClientInterfaceProperties = sourceTextBuilder.ToString();
 
-            // interface
-            sourceTextBuilder.AppendLine(
+        // SubClientSource
+        sourceTextBuilder.Clear();
+
+        foreach (var clientGroup in groupedClients)
+        {
+            AppendSubClientSourceText(
+                clientGroup.Key,
+                clientGroup.ToDictionary(entry => entry.Key, entry => entry.Value),
+                sourceTextBuilder,
+                settings);
+
+            sourceTextBuilder.AppendLine();
+        }
+
+        var subClientSource = sourceTextBuilder.ToString();
+
+        // Models
+        sourceTextBuilder.Clear();
+
+        foreach (var schema in document.Components.Schemas)
+        {
+            AppendModelSourceText(
+                schema.Key,
+                schema.Value,
+                sourceTextBuilder);
+
+            sourceTextBuilder.AppendLine();
+        }
+
+        var models = sourceTextBuilder.ToString();
+
+        // Build final source text
+        var basePath = Assembly.GetExecutingAssembly().Location;
+
+        using var templateStreamReader = new StreamReader(Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.CSharpTemplate.cs")!);
+
+        var template = templateStreamReader.ReadToEnd();
+
+        var data = new
+        {
+            Namespace = settings.Namespace,
+            ClientName = settings.ClientName,
+            TokenFoldername = settings.TokenFolderName,
+            ConfigurationHeaderKey = settings.ConfigurationHeaderKey,
+            SubClientFields = subClientFields,
+            SubClientFieldAssignments = subClientFieldAssignments,
+            SubClientProperties = subClientProperties,
+            SubClientInterfaceProperties = subClientInterfaceProperties,
+            SubClientSource = subClientSource,
+            ExceptionType = settings.ExceptionType,
+            ExceptionCodePrefix = settings.ExceptionCodePrefix,
+            Models = models,
+            Special_NexusFeatures = settings.Special_NexusFeatures
+        };
+
+        return stubble.Render(template, data);
+    }
+
+    private void AppendSubClientSourceText(
+        string className,
+        IDictionary<string, OpenApiPathItem> methodMap,
+        StringBuilder sourceTextBuilder,
+        GeneratorSettings settings)
+    {
+        var augmentedClassName = className + "Client";
+
+        // interface
+        sourceTextBuilder.AppendLine(
 $@"/// <summary>
 /// Provides methods to interact with {Shared.SplitCamelCase(className).ToLower()}.
 /// </summary>
 public interface I{augmentedClassName}
 {{");
 
-            foreach (var entry in methodMap)
+        foreach (var entry in methodMap)
+        {
+            if (entry.Value.Parameters.Any())
+                throw new Exception("Parameters on the path item level are not supported.");
+
+            foreach (var operation in entry.Value.Operations)
             {
-                if (entry.Value.Parameters.Any())
-                    throw new Exception("Parameters on the path item level are not supported.");
+                AppendInterfaceMethodSourceText(
+                    operation.Key,
+                    operation.Value,
+                    sourceTextBuilder,
+                    async: false);
 
-                foreach (var operation in entry.Value.Operations)
-                {
-                    AppendInterfaceMethodSourceText(
-                        operation.Key, 
-                        operation.Value, 
-                        sourceTextBuilder,
-                        async: false);
+                sourceTextBuilder.AppendLine();
 
-                    sourceTextBuilder.AppendLine();
+                AppendInterfaceMethodSourceText(
+                    operation.Key,
+                    operation.Value,
+                    sourceTextBuilder,
+                    async: true);
 
-                    AppendInterfaceMethodSourceText(
-                        operation.Key, 
-                        operation.Value, 
-                        sourceTextBuilder,
-                        async: true);
-                        
-                    sourceTextBuilder.AppendLine();
-                }
+                sourceTextBuilder.AppendLine();
             }
+        }
 
-            sourceTextBuilder.AppendLine("}");
-            sourceTextBuilder.AppendLine();
+        sourceTextBuilder.AppendLine("}");
+        sourceTextBuilder.AppendLine();
 
-            // implementation
-            sourceTextBuilder
-                .AppendLine("/// <inheritdoc />");
+        // implementation
+        sourceTextBuilder
+            .AppendLine("/// <inheritdoc />");
 
-            sourceTextBuilder.AppendLine(
+        sourceTextBuilder.AppendLine(
 $@"public class {augmentedClassName} : I{augmentedClassName}
 {{
     private {settings.ClientName}Client ___client;
@@ -185,408 +185,407 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
     }}
 ");
 
-            foreach (var entry in methodMap)
+        foreach (var entry in methodMap)
+        {
+            if (entry.Value.Parameters.Any())
+                throw new Exception("Parameters on the path item level are not supported.");
+
+            foreach (var operation in entry.Value.Operations)
             {
-                if (entry.Value.Parameters.Any())
-                    throw new Exception("Parameters on the path item level are not supported.");
+                AppendImplementationMethodSourceText(
+                    path: entry.Key,
+                    operation.Key,
+                    operation.Value,
+                    sourceTextBuilder,
+                    async: false);
 
-                foreach (var operation in entry.Value.Operations)
-                {
-                    AppendImplementationMethodSourceText(
-                        path: entry.Key,
-                        operation.Key,
-                        operation.Value,
-                        sourceTextBuilder,
-                        async: false);
+                sourceTextBuilder.AppendLine();
 
-                    sourceTextBuilder.AppendLine();
+                AppendImplementationMethodSourceText(
+                    path: entry.Key,
+                    operation.Key,
+                    operation.Value,
+                    sourceTextBuilder,
+                    async: true);
 
-                    AppendImplementationMethodSourceText(
-                        path: entry.Key,
-                        operation.Key,
-                        operation.Value,
-                        sourceTextBuilder,
-                        async: true);
-
-                    sourceTextBuilder.AppendLine();
-                }
+                sourceTextBuilder.AppendLine();
             }
-
-            sourceTextBuilder.AppendLine("}");
         }
 
-        private void AppendInterfaceMethodSourceText(
-            OperationType operationType,
-            OpenApiOperation operation,
-            StringBuilder sourceTextBuilder,
-            bool async)
-        {
-            var signature = GetMethodSignature(
-                operationType,
-                operation,
-                async: async,
-                out var returnType,
-                out var parameters,
-                out var body);
+        sourceTextBuilder.AppendLine("}");
+    }
 
-            var preparedReturnType = string.IsNullOrWhiteSpace(returnType)
-                ? async ? "Task" : "void"
-                : async ? $"Task<{returnType}>" : returnType;
+    private void AppendInterfaceMethodSourceText(
+        OperationType operationType,
+        OpenApiOperation operation,
+        StringBuilder sourceTextBuilder,
+        bool async)
+    {
+        var signature = GetMethodSignature(
+            operationType,
+            operation,
+            async: async,
+            out var returnType,
+            out var parameters,
+            out var body);
 
-            sourceTextBuilder.AppendLine(
+        var preparedReturnType = string.IsNullOrWhiteSpace(returnType)
+            ? async ? "Task" : "void"
+            : async ? $"Task<{returnType}>" : returnType;
+
+        sourceTextBuilder.AppendLine(
 $@"    /// <summary>
     /// {operation.Summary}
     /// </summary>");
 
-            foreach (var parameter in parameters)
-            {
-                sourceTextBuilder.AppendLine($"    /// <param name=\"{parameter.Item2.Name}\">{parameter.Item2.Description}</param>");
-            }
-
-            if (operation.RequestBody is not null && body is not null)
-                sourceTextBuilder.AppendLine($"    /// <param name=\"{body.Split(" ")[^1]}\">{operation.RequestBody.Description}</param>");
-
-            if (async)
-                sourceTextBuilder.AppendLine($"    /// <param name=\"cancellationToken\">The token to cancel the current operation.</param>");
-
-            sourceTextBuilder.AppendLine($"    {preparedReturnType} {signature};");
+        foreach (var parameter in parameters)
+        {
+            sourceTextBuilder.AppendLine($"    /// <param name=\"{parameter.Item2.Name}\">{parameter.Item2.Description}</param>");
         }
 
-        private void AppendImplementationMethodSourceText(
-            string path,
-            OperationType operationType,
-            OpenApiOperation operation,
-            StringBuilder sourceTextBuilder,
-            bool async)
+        if (operation.RequestBody is not null && body is not null)
+            sourceTextBuilder.AppendLine($"    /// <param name=\"{body.Split(" ")[^1]}\">{operation.RequestBody.Description}</param>");
+
+        if (async)
+            sourceTextBuilder.AppendLine($"    /// <param name=\"cancellationToken\">The token to cancel the current operation.</param>");
+
+        sourceTextBuilder.AppendLine($"    {preparedReturnType} {signature};");
+    }
+
+    private void AppendImplementationMethodSourceText(
+        string path,
+        OperationType operationType,
+        OpenApiOperation operation,
+        StringBuilder sourceTextBuilder,
+        bool async)
+    {
+        var signature = GetMethodSignature(
+            operationType,
+            operation,
+            async: async,
+            out var returnType,
+            out var parameters,
+            out var bodyParameter);
+
+        sourceTextBuilder
+            .AppendLine("    /// <inheritdoc />");
+
+        var isVoidReturnType = string.IsNullOrWhiteSpace(returnType);
+
+        var actualReturnType = isVoidReturnType
+            ? async ? "Task" : "void"
+            : async ? $"Task<{returnType}>" : returnType;
+
+        sourceTextBuilder
+            .AppendLine($"    public {actualReturnType} {signature}")
+            .AppendLine($"    {{");
+
+        sourceTextBuilder
+            .AppendLine("        var __urlBuilder = new StringBuilder();")
+            .AppendLine($"        __urlBuilder.Append(\"{path}\");");
+
+        // path parameters
+        var pathParameters = parameters
+            .Where(parameter => parameter.Item2.In == ParameterLocation.Path)
+            .ToList();
+
+        foreach (var parameter in pathParameters)
         {
-            var signature = GetMethodSignature(
-                operationType,
-                operation,
-                async: async,
-                out var returnType,
-                out var parameters,
-                out var bodyParameter);
+            var parameterName = parameter.Item1.Split(" ")[1];
+            var parameterToStringCode = GetParameterToStringCode(parameterName, parameter.Item2.Schema);
+            sourceTextBuilder.AppendLine($"        __urlBuilder.Replace(\"{{{parameterName}}}\", Uri.EscapeDataString({parameterToStringCode}));");
+        }
 
-            sourceTextBuilder
-                .AppendLine("    /// <inheritdoc />");
+        // query parameters
+        var queryParameters = parameters
+            .Where(parameter => parameter.Item2.In == ParameterLocation.Query)
+            .ToList();
 
-            var isVoidReturnType = string.IsNullOrWhiteSpace(returnType);
+        if (queryParameters.Any())
+        {
+            sourceTextBuilder.AppendLine();
+            sourceTextBuilder.AppendLine("        var __queryValues = new Dictionary<string, string>();");
+            sourceTextBuilder.AppendLine();
 
-            var actualReturnType = isVoidReturnType 
-                ? async ? "Task": "void"
-                : async ? $"Task<{returnType}>" : returnType;
-
-            sourceTextBuilder
-                .AppendLine($"    public {actualReturnType} {signature}")
-                .AppendLine($"    {{");
-
-            sourceTextBuilder
-                .AppendLine("        var __urlBuilder = new StringBuilder();")
-                .AppendLine($"        __urlBuilder.Append(\"{path}\");");
-
-            // path parameters
-            var pathParameters = parameters
-                .Where(parameter => parameter.Item2.In == ParameterLocation.Path)
-                .ToList();
-
-            foreach (var parameter in pathParameters)
+            foreach (var parameter in queryParameters)
             {
                 var parameterName = parameter.Item1.Split(" ")[1];
                 var parameterToStringCode = GetParameterToStringCode(parameterName, parameter.Item2.Schema);
-                sourceTextBuilder.AppendLine($"        __urlBuilder.Replace(\"{{{parameterName}}}\", Uri.EscapeDataString({parameterToStringCode}));");
-            }
+                var parameterValue = $"Uri.EscapeDataString({parameterToStringCode})";
 
-            // query parameters
-            var queryParameters = parameters
-                .Where(parameter => parameter.Item2.In == ParameterLocation.Query)
-                .ToList();
-
-            if (queryParameters.Any())
-            {
-                sourceTextBuilder.AppendLine();
-                sourceTextBuilder.AppendLine("        var __queryValues = new Dictionary<string, string>();");
-                sourceTextBuilder.AppendLine();
-
-                foreach (var parameter in queryParameters)
+                if (parameter.Item2.Schema.Nullable)
                 {
-                    var parameterName = parameter.Item1.Split(" ")[1];
-                    var parameterToStringCode = GetParameterToStringCode(parameterName, parameter.Item2.Schema);
-                    var parameterValue = $"Uri.EscapeDataString({parameterToStringCode})";
-
-                    if (parameter.Item2.Schema.Nullable)
-                    {
-                        sourceTextBuilder.AppendLine($"        if ({parameterName} is not null)");
-                        sourceTextBuilder.AppendLine($"            __queryValues[\"{parameterName}\"] = {parameterValue};");
-                    }
-
-                    else
-                    {
-                        sourceTextBuilder.AppendLine($"        __queryValues[\"{parameterName}\"] = {parameterValue};");
-                    }
-
-                    sourceTextBuilder.AppendLine();
+                    sourceTextBuilder.AppendLine($"        if ({parameterName} is not null)");
+                    sourceTextBuilder.AppendLine($"            __queryValues[\"{parameterName}\"] = {parameterValue};");
                 }
 
-                sourceTextBuilder.AppendLine("        var __query = \"?\" + string.Join('&', __queryValues.Select(entry => $\"{entry.Key}={entry.Value}\"));");
-                sourceTextBuilder.AppendLine("        __urlBuilder.Append(__query);");
+                else
+                {
+                    sourceTextBuilder.AppendLine($"        __queryValues[\"{parameterName}\"] = {parameterValue};");
+                }
+
+                sourceTextBuilder.AppendLine();
             }
 
-            // url
-            sourceTextBuilder.AppendLine();
-            sourceTextBuilder.Append("        var __url = __urlBuilder.ToString();");
-            sourceTextBuilder.AppendLine();
-
-            if (isVoidReturnType)
-                returnType = "object";
-
-            var response = operation.Responses.First().Value.Content.FirstOrDefault();
-
-            var acceptHeaderValue = response.Equals(default(KeyValuePair<string, OpenApiMediaType>))
-                ? "default"
-                : $"\"{response.Key}\"";
-
-            var contentTypeValue = operation.RequestBody is null
-                ? "default"
-                : $"\"{operation.RequestBody?.Content.Keys.First()}\"";
-
-            var content = bodyParameter is null
-                ? "default"
-                : operation.RequestBody?.Content.Keys.First() switch
-                {
-                    "application/json" => $"JsonContent.Create({bodyParameter.Split(" ")[^1]}, options: Utilities.JsonOptions)",
-                    "application/octet-stream" => $"new StreamContent({bodyParameter.Split(" ")[^1]})",
-                    _ => throw new Exception($"The media type {operation.RequestBody!.Content.Keys.First()} is not supported.")
-                };
-
-            if (async)
-                sourceTextBuilder.AppendLine($"        return ___client.InvokeAsync<{returnType}>(\"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content}, cancellationToken);");
-
-            else
-                sourceTextBuilder.AppendLine($"        {(isVoidReturnType ? "" : "return ")}___client.Invoke<{returnType}>(\"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content});");
-
-            sourceTextBuilder.AppendLine($"    }}");
+            sourceTextBuilder.AppendLine("        var __query = \"?\" + string.Join('&', __queryValues.Select(entry => $\"{entry.Key}={entry.Value}\"));");
+            sourceTextBuilder.AppendLine("        __urlBuilder.Append(__query);");
         }
 
-        private void AppendModelSourceText(
-            string modelName,
-            OpenApiSchema schema,
-            StringBuilder sourceTextBuilder)
-        {
-            // Maybe schema.Extensions[0].x-enumNames would be a better selection.
+        // url
+        sourceTextBuilder.AppendLine();
+        sourceTextBuilder.Append("        var __url = __urlBuilder.ToString();");
+        sourceTextBuilder.AppendLine();
 
-            if (schema.Enum.Any())
+        if (isVoidReturnType)
+            returnType = "object";
+
+        var response = operation.Responses.First().Value.Content.FirstOrDefault();
+
+        var acceptHeaderValue = response.Equals(default(KeyValuePair<string, OpenApiMediaType>))
+            ? "default"
+            : $"\"{response.Key}\"";
+
+        var contentTypeValue = operation.RequestBody is null
+            ? "default"
+            : $"\"{operation.RequestBody?.Content.Keys.First()}\"";
+
+        var content = bodyParameter is null
+            ? "default"
+            : operation.RequestBody?.Content.Keys.First() switch
             {
-                if (schema.Type != "string")
-                    throw new Exception("Only enum of type string is supported.");
+                "application/json" => $"JsonContent.Create({bodyParameter.Split(" ")[^1]}, options: Utilities.JsonOptions)",
+                "application/octet-stream" => $"new StreamContent({bodyParameter.Split(" ")[^1]})",
+                _ => throw new Exception($"The media type {operation.RequestBody!.Content.Keys.First()} is not supported.")
+            };
 
-                var enumValues = string
-                    .Join($",{Environment.NewLine}{Environment.NewLine}", schema.Enum
-                    .OfType<OpenApiString>()
-                    .Select(current =>
+        if (async)
+            sourceTextBuilder.AppendLine($"        return ___client.InvokeAsync<{returnType}>(\"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content}, cancellationToken);");
+
+        else
+            sourceTextBuilder.AppendLine($"        {(isVoidReturnType ? "" : "return ")}___client.Invoke<{returnType}>(\"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content});");
+
+        sourceTextBuilder.AppendLine($"    }}");
+    }
+
+    private void AppendModelSourceText(
+        string modelName,
+        OpenApiSchema schema,
+        StringBuilder sourceTextBuilder)
+    {
+        // Maybe schema.Extensions[0].x-enumNames would be a better selection.
+
+        if (schema.Enum.Any())
+        {
+            if (schema.Type != "string")
+                throw new Exception("Only enum of type string is supported.");
+
+            var enumValues = string
+                .Join($",{Environment.NewLine}{Environment.NewLine}", schema.Enum
+                .OfType<OpenApiString>()
+                .Select(current =>
 $@"    /// <summary>
     /// {current.Value}
     /// </summary>
     {current.Value}"));
 
-                sourceTextBuilder.AppendLine(
+            sourceTextBuilder.AppendLine(
 @$"/// <summary>
 /// {schema.Description}
 /// </summary>");
 
-                sourceTextBuilder.AppendLine(
+            sourceTextBuilder.AppendLine(
 @$"public enum {modelName}
 {{
 {enumValues}
 }}");
 
-                sourceTextBuilder.AppendLine();
-            }
+            sourceTextBuilder.AppendLine();
+        }
 
-            else
-            {
-                var parameters = schema.Properties is null
-                   ? string.Empty
-                   : GetProperties(schema.Properties);
+        else
+        {
+            var parameters = schema.Properties is null
+               ? string.Empty
+               : GetProperties(schema.Properties);
 
-                sourceTextBuilder.AppendLine(
+            sourceTextBuilder.AppendLine(
 @$"/// <summary>
 /// {schema.Description}
 /// </summary>");
 
-                if (schema.Properties is not null)
+            if (schema.Properties is not null)
+            {
+                foreach (var property in schema.Properties)
                 {
-                    foreach (var property in schema.Properties)
-                    {
-                        sourceTextBuilder.AppendLine($"/// <param name=\"{Shared.FirstCharToUpper(property.Key)}\">{property.Value.Description}</param>");
-                    }
+                    sourceTextBuilder.AppendLine($"/// <param name=\"{Shared.FirstCharToUpper(property.Key)}\">{property.Value.Description}</param>");
                 }
-
-                sourceTextBuilder
-                    .AppendLine($"public record {modelName}({parameters});");
             }
+
+            sourceTextBuilder
+                .AppendLine($"public record {modelName}({parameters});");
         }
+    }
 
-        private string GetParameterToStringCode(string parameterName, OpenApiSchema schema)
+    private string GetParameterToStringCode(string parameterName, OpenApiSchema schema)
+    {
+        var type = GetType(schema);
+
+        return type switch
         {
-            var type = GetType(schema);
+            "DateTime" => $"{parameterName}.ToString(\"o\", CultureInfo.InvariantCulture)",
+            "string" => parameterName,
+            _ => $"Convert.ToString({parameterName}, CultureInfo.InvariantCulture)!"
+        };
+    }
 
-            return type switch
-            {
-                "DateTime" => $"{parameterName}.ToString(\"o\", CultureInfo.InvariantCulture)",
-                "string" => parameterName,
-                _ => $"Convert.ToString({parameterName}, CultureInfo.InvariantCulture)!"
-            };
-        }
-
-        private string GetProperties(IDictionary<string, OpenApiSchema> propertyMap)
+    private string GetProperties(IDictionary<string, OpenApiSchema> propertyMap)
+    {
+        var methodParameters = propertyMap.Select(entry =>
         {
-            var methodParameters = propertyMap.Select(entry =>
-            {
-                var type = GetType(entry.Value);
-                var parameterName = Shared.FirstCharToUpper(entry.Key);
-                return $"{type} {parameterName}";
-            });
+            var type = GetType(entry.Value);
+            var parameterName = Shared.FirstCharToUpper(entry.Key);
+            return $"{type} {parameterName}";
+        });
 
-            return string.Join(", ", methodParameters);
-        }
+        return string.Join(", ", methodParameters);
+    }
 
-        private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, bool returnValue = false)
+    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, bool returnValue = false)
+    {
+        return mediaTypeKey switch
         {
-            return mediaTypeKey switch
-            {
-                "application/octet-stream" => returnValue ? "HttpResponseMessage" : "Stream",
-                "application/json" => GetType(mediaType.Schema),
-                _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
-            };
-        }
+            "application/octet-stream" => returnValue ? "HttpResponseMessage" : "Stream",
+            "application/json" => GetType(mediaType.Schema),
+            _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
+        };
+    }
 
-        private string GetType(OpenApiSchema schema)
+    private string GetType(OpenApiSchema schema)
+    {
+        string type;
+
+        if (schema.Reference is null)
         {
-            string type;
-
-            if (schema.Reference is null)
+            type = (schema.Type, schema.Format, schema.AdditionalPropertiesAllowed) switch
             {
-                type = (schema.Type, schema.Format, schema.AdditionalPropertiesAllowed) switch
+                (null, _, _) => schema.OneOf.Count switch
                 {
-                    (null, _, _) => schema.OneOf.Count switch
-                    {
-                        0 => "JsonElement",
-                        1 => GetType(schema.OneOf.First()),
-                        _ => throw new Exception("Only zero or one entries are supported.")
-                    },
-                    ("boolean", _, _) => "bool",
-                    ("number", "double", _) => "double",
-                    ("integer", "int32", _) => "int",
-                    ("string", "uri", _) => "Uri",
-                    ("string", "guid", _) => "Guid",
-                    ("string", "duration", _) => "TimeSpan",
-                    ("string", "date-time", _) => "DateTime",
-                    ("string", _, _) => "string",
-                    ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items)}>",
-                    ("object", _, true) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties)}>",
-                    (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
-                };
-            }
-
-            else
-            {
-                type = schema.Reference.Id;
-            }
-
-            return schema.Nullable
-                ? $"{type}?"
-                : type;
+                    0 => "JsonElement",
+                    1 => GetType(schema.OneOf.First()),
+                    _ => throw new Exception("Only zero or one entries are supported.")
+                },
+                ("boolean", _, _) => "bool",
+                ("number", "double", _) => "double",
+                ("integer", "int32", _) => "int",
+                ("string", "uri", _) => "Uri",
+                ("string", "guid", _) => "Guid",
+                ("string", "duration", _) => "TimeSpan",
+                ("string", "date-time", _) => "DateTime",
+                ("string", _, _) => "string",
+                ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items)}>",
+                ("object", _, true) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties)}>",
+                (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
+            };
         }
 
-        private string GetMethodSignature(
-            OperationType operationType,
-            OpenApiOperation operation,
-            bool async,
-            out string returnType,
-            out IEnumerable<(string, OpenApiParameter)> parameters,
-            out string? bodyParameter)
+        else
         {
-            if (!(operationType == OperationType.Get ||
-                operationType == OperationType.Put ||
-                operationType == OperationType.Post ||
-                operationType == OperationType.Delete))
-                throw new Exception("Only get, put, post or delete operations are supported.");
+            type = schema.Reference.Id;
+        }
 
-            var methodName = operation.OperationId.Split(new[] { '_' }, 2)[1];
-            var asyncMethodName = methodName + "Async";
+        return schema.Nullable
+            ? $"{type}?"
+            : type;
+    }
 
-            if (operation.Responses.Count != 1)
-                throw new Exception("Only a single response is supported.");
+    private string GetMethodSignature(
+        OperationType operationType,
+        OpenApiOperation operation,
+        bool async,
+        out string returnType,
+        out IEnumerable<(string, OpenApiParameter)> parameters,
+        out string? bodyParameter)
+    {
+        if (!(operationType == OperationType.Get ||
+            operationType == OperationType.Put ||
+            operationType == OperationType.Post ||
+            operationType == OperationType.Delete))
+            throw new Exception("Only get, put, post or delete operations are supported.");
 
-            var responseEntry = operation.Responses.First();
-            var responseType = responseEntry.Key;
-            var response = responseEntry.Value;
+        var methodName = operation.OperationId.Split(new[] { '_' }, 2)[1];
+        var asyncMethodName = methodName + "Async";
 
-            if (responseType != "200")
-                throw new Exception("Only response type '200' is supported.");
+        if (operation.Responses.Count != 1)
+            throw new Exception("Only a single response is supported.");
 
-            returnType = response.Content.Count switch
+        var responseEntry = operation.Responses.First();
+        var responseType = responseEntry.Key;
+        var response = responseEntry.Value;
+
+        if (responseType != "200")
+            throw new Exception("Only response type '200' is supported.");
+
+        returnType = response.Content.Count switch
+        {
+            0 => string.Empty,
+            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
+            _ => throw new Exception("Only zero or one response contents are supported.")
+        };
+
+        parameters = Enumerable.Empty<(string, OpenApiParameter)>();
+        bodyParameter = default;
+
+        if (!operation.Parameters.Any() && operation.RequestBody is null)
+        {
+            return async
+                ? $"{asyncMethodName}(CancellationToken cancellationToken = default)"
+                : $"{methodName}()";
+        }
+
+        else
+        {
+            if (operation.Parameters.Any(parameter
+                => parameter.In != ParameterLocation.Path && parameter.In != ParameterLocation.Query))
+                throw new Exception("Only path or query parameters are supported.");
+
+            parameters = operation.Parameters
+                .Select(parameter => ($"{GetType(parameter.Schema)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
+
+            if (operation.RequestBody is not null)
             {
-                0 => string.Empty,
-                1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
-                _ => throw new Exception("Only zero or one response contents are supported.")
-            };
+                if (operation.RequestBody.Content.Count != 1)
+                    throw new Exception("Only a single request body content is supported.");
 
-            parameters = Enumerable.Empty<(string, OpenApiParameter)>();
-            bodyParameter = default;
+                var content = operation.RequestBody.Content.First();
 
-            if (!operation.Parameters.Any() && operation.RequestBody is null)
-            {
-                return async
-                    ? $"{asyncMethodName}(CancellationToken cancellationToken = default)"
-                    : $"{methodName}()";
+                if (!(content.Key == "application/json" || content.Key == "application/octet-stream"))
+                    throw new Exception("Only body content media types application/json or application/octet-stream are supported.");
+
+                if (!operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
+                    throw new Exception("x-name extension is missing.");
+
+
+                if (value is not OpenApiString name)
+                    throw new Exception("The actual x-name value type is not supported.");
+
+                var type = GetType(content.Key, content.Value);
+                bodyParameter = $"{type} {name.Value}";
             }
 
-            else
-            {
-                if (operation.Parameters.Any(parameter
-                    => parameter.In != ParameterLocation.Path && parameter.In != ParameterLocation.Query))
-                    throw new Exception("Only path or query parameters are supported.");
+            var parametersString = bodyParameter == default
 
-                parameters = operation.Parameters
-                    .Select(parameter => ($"{GetType(parameter.Schema)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
+                ? string.Join(", ", parameters
+                    .OrderByDescending(parameter => parameter.Item2.Required)
+                    .Select(parameter => parameter.Item1))
 
-                if (operation.RequestBody is not null)
-                {
-                    if (operation.RequestBody.Content.Count != 1)
-                        throw new Exception("Only a single request body content is supported.");
+                : string.Join(", ", parameters
+                    .Concat(new[] { (bodyParameter, default(OpenApiParameter)!) })
+                    .OrderByDescending(parameter => parameter.Item2 is null || parameter.Item2.Required)
+                    .Select(parameter => parameter.Item1));
 
-                    var content = operation.RequestBody.Content.First();
-
-                    if (!(content.Key == "application/json" || content.Key == "application/octet-stream"))
-                        throw new Exception("Only body content media types application/json or application/octet-stream are supported.");
-
-                    if (!operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
-                        throw new Exception("x-name extension is missing.");
-
-
-                    if (value is not OpenApiString name)
-                        throw new Exception("The actual x-name value type is not supported.");
-
-                    var type = GetType(content.Key, content.Value);
-                    bodyParameter = $"{type} {name.Value}";
-                }
-
-                var parametersString = bodyParameter == default
-
-                    ? string.Join(", ", parameters
-                        .OrderByDescending(parameter => parameter.Item2.Required)
-                        .Select(parameter => parameter.Item1))
-
-                    : string.Join(", ", parameters
-                        .Concat(new[] { (bodyParameter, default(OpenApiParameter)!) })
-                        .OrderByDescending(parameter => parameter.Item2 is null || parameter.Item2.Required)
-                        .Select(parameter => parameter.Item1));
-
-                return async
-                    ? $"{asyncMethodName}({parametersString}, CancellationToken cancellationToken = default)"
-                    : $"{methodName}({parametersString})";
-            }
+            return async
+                ? $"{asyncMethodName}({parametersString}, CancellationToken cancellationToken = default)"
+                : $"{methodName}({parametersString})";
         }
     }
 }
