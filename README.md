@@ -3,7 +3,7 @@
 [![GitHub Actions](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions) [![NuGet](https://img.shields.io/nuget/v/Apollo3zehn.OpenApiClientGenerator?label=Nuget)](https://www.nuget.org/packages/Apollo3zehn.OpenApiClientGenerator)
 
 - This project provides an OpenAPI client generator, i.e. it takes an openapi.json file as input and generates the corresponding output.
-- The generator code has been tested on three different projects but is yet fully generic, so it might not lead to perfect results in your case. Please file an issue if you run into problems.
+- The generator code has been tested on three different projects but is not yet fully generic, so it might not lead to perfect results in your case. Please file an issue if you run into problems.
 - The generated C# code makes heavy use of [C# 10 Record types ](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record). 
 - Both types of clients (C# and Python) will be generated with sync and async support.
 - All types are strongly-typed, i.e. JSON data will be serialized and deserialized as required.
