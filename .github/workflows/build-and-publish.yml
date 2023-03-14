@@ -59,8 +59,8 @@ jobs:
         with:
           name: artifacts
           path: |
-            artifacts/*.txt
             artifacts/packages/
+            artifacts/tag_body.txt
 
     outputs:
       is_release: ${{ env.IS_RELEASE }}
