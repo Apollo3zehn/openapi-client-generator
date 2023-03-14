@@ -9,7 +9,7 @@ namespace Apollo3zehn.OpenApiClientGenerator;
 public class CSharpGenerator
 {
     private readonly GeneratorSettings _settings;
-    private List<string> _additionalModels;
+    private Dictionary<string, string> _additionalModels = default!;
 
     public CSharpGenerator(GeneratorSettings settings)
     {
@@ -104,7 +104,7 @@ $@"    /// <summary>
             sourceTextBuilder.AppendLine();
         }
 
-        foreach (var modelText in _additionalModels)
+        foreach (var (_, modelText) in _additionalModels)
         {
             sourceTextBuilder.Append(modelText);
             sourceTextBuilder.AppendLine();
@@ -254,16 +254,16 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
 
         sourceTextBuilder.AppendLine(
 $@"    /// <summary>
-    /// {operation.Summary}
+    /// {GetFirstLine(operation.Summary)}
     /// </summary>");
 
         foreach (var parameter in parameters)
         {
-            sourceTextBuilder.AppendLine($"    /// <param name=\"{parameter.Item2.Name}\">{parameter.Item2.Description}</param>");
+            sourceTextBuilder.AppendLine($"    /// <param name=\"{parameter.Item2.Name}\">{GetFirstLine(parameter.Item2.Description ?? parameter.Item2.Schema.Description)}</param>");
         }
 
         if (operation.RequestBody is not null && body is not null)
-            sourceTextBuilder.AppendLine($"    /// <param name=\"{body.Split(" ")[^1]}\">{operation.RequestBody.Description}</param>");
+            sourceTextBuilder.AppendLine($"    /// <param name=\"{body.Split(" ")[^1]}\">{GetFirstLine(operation.RequestBody.Description)}</param>");
 
         if (async)
             sourceTextBuilder.AppendLine($"    /// <param name=\"cancellationToken\">The token to cancel the current operation.</param>");
@@ -333,7 +333,7 @@ $@"    /// <summary>
                 var parameterToStringCode = GetParameterToStringCode(parameterName, parameter.Item2.Schema);
                 var parameterValue = $"Uri.EscapeDataString({parameterToStringCode})";
 
-                if (parameter.Item2.Schema.Nullable)
+                if (!parameter.Item2.Required || parameter.Item2.Schema.Nullable)
                 {
                     sourceTextBuilder.AppendLine($"        if ({parameterName} is not null)");
                     sourceTextBuilder.AppendLine($"            __queryValues[\"{parameterName}\"] = {parameterValue};");
@@ -404,13 +404,13 @@ $@"    /// <summary>
                 .OfType<OpenApiString>()
                 .Select(current =>
 $@"    /// <summary>
-    /// {current.Value}
+    /// {GetFirstLine(current.Value)}
     /// </summary>
     {current.Value}"));
 
             sourceTextBuilder.AppendLine(
 @$"/// <summary>
-/// {schema.Description}
+/// {GetFirstLine(schema.Description)}
 /// </summary>");
 
             sourceTextBuilder.AppendLine(
@@ -430,14 +430,14 @@ $@"    /// <summary>
 
             sourceTextBuilder.AppendLine(
 @$"/// <summary>
-/// {schema.Description}
+/// {GetFirstLine(schema.Description)}
 /// </summary>");
 
             if (schema.Properties is not null)
             {
                 foreach (var property in schema.Properties)
                 {
-                    sourceTextBuilder.AppendLine($"/// <param name=\"{Shared.FirstCharToUpper(property.Key)}\">{property.Value.Description}</param>");
+                    sourceTextBuilder.AppendLine($"/// <param name=\"{Shared.FirstCharToUpper(property.Key)}\">{GetFirstLine(property.Value.Description)}</param>");
                 }
             }
 
@@ -448,7 +448,7 @@ $@"    /// <summary>
 
     private string GetParameterToStringCode(string parameterName, OpenApiSchema schema)
     {
-        var type = GetType(schema);
+        var type = GetType(schema, anonymousTypeName: default, isRequired: true);
 
         return type switch
         {
@@ -462,25 +462,26 @@ $@"    /// <summary>
     {
         var methodParameters = propertyMap.Select(entry =>
         {
-            var type = GetType(entry.Value);
             var parameterName = Shared.FirstCharToUpper(entry.Key);
+            var anonymousTypeName = $"{parameterName}Type";
+            var type = GetType(entry.Value, anonymousTypeName, isRequired: true);
             return $"{type} {parameterName}";
         });
 
         return string.Join(", ", methodParameters);
     }
 
-    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, bool returnValue = false)
+    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, string? anonymousTypeName, bool isRequired, bool returnValue = false)
     {
         return mediaTypeKey switch
         {
             "application/octet-stream" => returnValue ? "HttpResponseMessage" : "Stream",
-            "application/json" => GetType(mediaType.Schema),
+            "application/json" => GetType(mediaType.Schema, anonymousTypeName, isRequired),
             _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
         };
     }
 
-    private string GetType(OpenApiSchema schema, bool isRequired = true)
+    private string GetType(OpenApiSchema schema, string? anonymousTypeName, bool isRequired)
     {
         string type;
 
@@ -491,7 +492,7 @@ $@"    /// <summary>
                 (null, _, _) => schema.OneOf.Count switch
                 {
                     0 => "JsonElement",
-                    1 => GetType(schema.OneOf.First()),
+                    1 => GetType(schema.OneOf.First(), anonymousTypeName, isRequired),
                     _ => throw new Exception("Only zero or one entries are supported.")
                 },
                 ("boolean", _, _) => "bool",
@@ -504,9 +505,9 @@ $@"    /// <summary>
                 ("string", "duration", _) => "TimeSpan",
                 ("string", "date-time", _) => "DateTime",
                 ("string", _, _) => "string",
-                ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items)}>",
-                ("object", _, null) => $"IReadOnlyDictionary<string, {GetAnonymousType(schema)}>",
-                ("object", _, _) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties)}>",
+                ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items, anonymousTypeName, isRequired)}>",
+                ("object", _, null) => $"IReadOnlyDictionary<string, {GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema)}>",
+                ("object", _, _) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties, anonymousTypeName, isRequired)}>",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
         }
@@ -521,26 +522,17 @@ $@"    /// <summary>
             : type;
     }
 
-    private string GetAnonymousType(OpenApiSchema schema)
+    private string GetAnonymousType(string anonymousTypeName, OpenApiSchema schema)
     {
-        var id = RandomString(10);
+        var modelName = anonymousTypeName;
         var stringBuilder = new StringBuilder();
 
-        AppendModelSourceText(modelName: id, schema, stringBuilder);
+        AppendModelSourceText(modelName: modelName, schema, stringBuilder);
 
         var modelText = stringBuilder.ToString();
-        _additionalModels.Add(modelText);
+        _additionalModels[modelName] = modelText;
 
-        return id;
-    }
-
-    private static Random random = new Random();
-
-    private static string RandomString(int length)
-    {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        return new string(Enumerable.Repeat(chars, length)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
+        return modelName;
     }
 
     private string GetMethodSignature(
@@ -571,12 +563,12 @@ $@"    /// <summary>
         if (!(responseType == "200" || responseType == "201"))
             throw new Exception("Only response type '200' or '201' is supported.");
 
+        var anonymousReturnTypeName = $"{methodName}Response";
+
         returnType = response.Content.Count switch
         {
             0 => string.Empty,
-            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
-            // TODO this is a workaround
-            2 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
+            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), anonymousReturnTypeName, isRequired: true, returnValue: true)}",
             _ => throw new Exception("Only zero or one response contents are supported.")
         };
 
@@ -595,10 +587,9 @@ $@"    /// <summary>
             // if (operation.Parameters.Any(parameter
             //     => parameter.In != ParameterLocation.Path && parameter.In != ParameterLocation.Query))
             //     throw new Exception("Only path or query parameters are supported.");
-
             parameters = operation.Parameters
                 .Where(parameter => parameter.In == ParameterLocation.Query || parameter.In == ParameterLocation.Path)
-                .Select(parameter => ($"{GetType(parameter.Schema, parameter.Required)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
+                .Select(parameter => ($"{GetType(parameter.Schema, anonymousTypeName: default, parameter.Required)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
 
             if (operation.RequestBody is not null)
             {
@@ -613,17 +604,21 @@ $@"    /// <summary>
                 string type;
                 string name;
 
+                var isRequired = operation.RequestBody.Required;
+
                 if (operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
                 {
                     if (value is not OpenApiString openApiString)
                         throw new Exception("The actual x-name value type is not supported.");
 
-                    type = GetType(content.Key, content.Value);
+                    var anonymousRequestTypeName = $"{methodName}Request";
+
+                    type = GetType(content.Key, content.Value, anonymousTypeName: anonymousRequestTypeName, isRequired: operation.RequestBody.Required);
                     name = openApiString.Value;
                 }
                 else
                 {
-                    type = "JsonElement";
+                    type = isRequired ? "JsonElement" : "JsonElement?";
                     name = "body";
                 }
 
@@ -645,5 +640,14 @@ $@"    /// <summary>
                 ? $"{asyncMethodName}({parametersString}, CancellationToken cancellationToken = default)"
                 : $"{methodName}({parametersString})";
         }
+    }
+
+    private static string? GetFirstLine(string? value)
+    {
+        if (value is null)
+            return null;
+
+        using var reader = new StringReader(value);
+        return reader.ReadLine();
     }
 }

@@ -16,6 +16,7 @@ record SubClientProperties(
 public class PythonGenerator
 {
     private readonly GeneratorSettings _settings;
+    private Dictionary<string, string> _additionalModels = default!;
 
     public PythonGenerator(GeneratorSettings settings)
     {
@@ -24,23 +25,9 @@ public class PythonGenerator
 
     public string Generate(OpenApiDocument document)
     {
+        _additionalModels = new();
         var sourceTextBuilder = new StringBuilder();
         var stubble = new StubbleBuilder().Build();
-
-        // Models
-        sourceTextBuilder.Clear();
-
-        foreach (var schema in document.Components.Schemas)
-        {
-            AppendModelSourceText(
-                schema.Key,
-                schema.Value,
-                sourceTextBuilder);
-
-            sourceTextBuilder.AppendLine();
-        }
-
-        var models = sourceTextBuilder.ToString();
 
         using var clientTemplateStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
@@ -71,6 +58,7 @@ public class PythonGenerator
             Exit = "aexit",
             Read = "aread",
             For = "async for",
+            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
@@ -99,10 +87,32 @@ public class PythonGenerator
             Exit = "exit",
             Read = "read",
             For = "for",
+            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
         var syncClient = stubble.Render(clientTemplate, data2);
+
+        // Models
+        sourceTextBuilder.Clear();
+
+        foreach (var schema in document.Components.Schemas)
+        {
+            AppendModelSourceText(
+                schema.Key,
+                schema.Value,
+                sourceTextBuilder);
+
+            sourceTextBuilder.AppendLine();
+        }
+
+        foreach (var (_, modelText) in _additionalModels)
+        {
+            sourceTextBuilder.Append(modelText);
+            sourceTextBuilder.AppendLine();
+        }
+
+        var models = sourceTextBuilder.ToString();
 
         // Build final source text
 
@@ -127,6 +137,7 @@ public class PythonGenerator
             Models = models,
             AsyncClient = asyncClient,
             SyncClient = syncClient,
+            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
@@ -272,14 +283,14 @@ $@"class {augmentedClassName}:
         sourceTextBuilder.AppendLine(
 @$"    def {signature} -> {actualActualReturnType}:
         """"""
-        {operation.Summary}
+        {GetFirstLine(operation.Summary)}
 
         Args:");
 
         foreach (var parameter in parameters)
         {
             var parameterName = parameter.Item1.Split(":")[0];
-            sourceTextBuilder.AppendLine($"            {parameterName}: {parameter.Item2.Description}");
+            sourceTextBuilder.AppendLine($"            {parameterName}: {GetFirstLine(parameter.Item2.Description)}");
         }
 
         sourceTextBuilder.AppendLine(@"        """"""
@@ -317,7 +328,7 @@ $@"class {augmentedClassName}:
                 var parameterName = parameter.Item1.Split(":")[0];
                 var parameterValue = $"quote(_to_string({parameterName}), safe=\"\")";
 
-                if (parameter.Item2.Schema.Nullable)
+                if (!parameter.Item2.Required || parameter.Item2.Schema.Nullable)
                 {
                     sourceTextBuilder.AppendLine($"        if {parameterName} is not None:");
                     sourceTextBuilder.AppendLine($"            __query_values[\"{originalParameterName}\"] = {parameterValue}");
@@ -378,11 +389,11 @@ $@"class {augmentedClassName}:
                 .OfType<OpenApiString>()
                 .Select(current =>
 $@"    {Shared.ToSnakeCase(current.Value).ToUpper()} = ""{Shared.ToSnakeCase(current.Value).ToUpper()}""
-    """"""{current.Value}"""""""));
+    """"""{GetFirstLine(current.Value)}"""""""));
 
             sourceTextBuilder.AppendLine(
 @$"class {modelName}(Enum):
-    """"""{schema.Description}""""""
+    """"""{GetFirstLine(schema.Description)}""""""
 
 {enumValues}");
 
@@ -398,7 +409,7 @@ class {modelName}:");
 
             sourceTextBuilder.AppendLine(
 @$"    """"""
-    {schema.Description}
+    {GetFirstLine(schema.Description)}
 
     Args:");
 
@@ -406,7 +417,7 @@ class {modelName}:");
             {
                 foreach (var property in schema.Properties)
                 {
-                    sourceTextBuilder.AppendLine($"        {Shared.ToSnakeCase(property.Key)}: {property.Value.Description}");
+                    sourceTextBuilder.AppendLine($"        {Shared.ToSnakeCase(property.Key)}: {GetFirstLine(property.Value.Description)}");
                 }
             }
 
@@ -418,8 +429,13 @@ class {modelName}:");
             {
                 foreach (var property in schema.Properties)
                 {
-                    var type = GetType(property.Value);
                     var propertyName = Shared.ToSnakeCase(property.Key);
+
+                    if (propertyName == "class")
+                        propertyName = "class_";
+
+                    var anonymousTypeName = $"{Shared.FirstCharToUpper(property.Key)}Type";
+                    var type = GetType(property.Value, anonymousTypeName, isRequired: true);
 
                     sourceTextBuilder.AppendLine(
 $@"    {propertyName}: {type}
@@ -430,40 +446,43 @@ $@"    {propertyName}: {type}
         }
     }
 
-    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, bool returnValue = false)
+    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, string? anonymousTypeName, bool isRequired, bool returnValue = false)
     {
         return mediaTypeKey switch
         {
             "application/octet-stream" => returnValue ? "Response" : "Union[bytes, Iterable[bytes], AsyncIterable[bytes]]",
-            "application/json" => GetType(mediaType.Schema),
+            "application/json" => GetType(mediaType.Schema, anonymousTypeName, isRequired),
             _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
         };
     }
 
-    private string GetType(OpenApiSchema schema, bool isRequired = true)
+    private string GetType(OpenApiSchema schema, string? anonymousTypeName, bool isRequired)
     {
         string type;
 
         if (schema.Reference is null)
         {
-            type = (schema.Type, schema.Format, schema.AdditionalPropertiesAllowed) switch
+            type = (schema.Type, schema.Format, schema.AdditionalProperties) switch
             {
                 (null, _, _) => schema.OneOf.Count switch
                 {
                     0 => "object",
-                    1 => GetType(schema.OneOf.First()),
+                    1 => GetType(schema.OneOf.First(), anonymousTypeName, isRequired),
                     _ => throw new Exception("Only zero or one entries are supported.")
                 },
                 ("boolean", _, _) => "bool",
                 ("number", "double", _) => "float",
+                ("number", _, _) => "float",
                 ("integer", "int32", _) => "int",
+                ("integer", _, _) => "int",
                 ("string", "uri", _) => "str",
                 ("string", "guid", _) => "UUID",
                 ("string", "duration", _) => "timedelta",
                 ("string", "date-time", _) => "datetime",
                 ("string", _, _) => "str",
-                ("array", _, _) => $"list[{GetType(schema.Items)}]",
-                ("object", _, true) => $"dict[str, {GetType(schema.AdditionalProperties)}]",
+                ("array", _, _) => $"list[{GetType(schema.Items, anonymousTypeName, isRequired)}]",
+                ("object", _, null) => $"dict[str, {GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema)}]",
+                ("object", _, _) => $"dict[str, {GetType(schema.AdditionalProperties, anonymousTypeName, isRequired)}]",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
         }
@@ -476,6 +495,19 @@ $@"    {propertyName}: {type}
         return (schema.Nullable || !isRequired)
             ? $"Optional[{type}]"
             : type;
+    }
+
+    private string GetAnonymousType(string anonymousTypeName, OpenApiSchema schema)
+    {
+        var modelName = anonymousTypeName;
+        var stringBuilder = new StringBuilder();
+
+        AppendModelSourceText(modelName: modelName, schema, stringBuilder);
+
+        var modelText = stringBuilder.ToString();
+        _additionalModels[modelName] = modelText;
+
+        return modelName;
     }
 
     private string GetMethodSignature(
@@ -495,8 +527,8 @@ $@"    {propertyName}: {type}
         var methodName = _settings.GetOperationName(path, operationType, operation);
         var asyncMethodName = methodName; // + "Async";
 
-        if (operation.Responses.Count != 1)
-            throw new Exception("Only a single response is supported.");
+        // if (operation.Responses.Count != 1)
+        //     throw new Exception("Only a single response is supported.");
 
         var responseEntry = operation.Responses.First();
         var responseType = responseEntry.Key;
@@ -505,10 +537,14 @@ $@"    {propertyName}: {type}
         if (!(responseType == "200" || responseType == "201"))
             throw new Exception("Only response type '200' or '201' is supported.");
 
+        var anonymousReturnTypeName = $"{methodName}Response";
+
         returnType = response.Content.Count switch
         {
             0 => string.Empty,
-            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), returnValue: true)}",
+            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), anonymousReturnTypeName, isRequired: true, returnValue: true)}",
+            // TODO this is a workaround
+            2 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), anonymousReturnTypeName, isRequired: true, returnValue: true)}",
             _ => throw new Exception("Only zero or one response contents are supported.")
         };
 
@@ -528,7 +564,7 @@ $@"    {propertyName}: {type}
 
             parameters = operation.Parameters
                 .Where(parameter => parameter.In == ParameterLocation.Query || parameter.In == ParameterLocation.Path)
-                .Select(parameter => ($"{GetType(parameter.Schema, parameter.Required)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
+                .Select(parameter => ($"{Shared.ToSnakeCase(parameter.Name)}: {GetType(parameter.Schema, anonymousTypeName: default, parameter.Required)}{(parameter.Required ? "" : " = None")}", parameter));
 
             if (operation.RequestBody is not null)
             {
@@ -540,14 +576,28 @@ $@"    {propertyName}: {type}
                 if (!(content.Key == "application/json" || content.Key == "application/octet-stream"))
                     throw new Exception("Only body content media types application/json or application/octet-stream are supported.");
 
-                if (!operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
-                    throw new Exception("x-name extension is missing.");
+                string type;
+                string name;
 
-                if (value is not OpenApiString name)
-                    throw new Exception("The actual x-name value type is not supported.");
+                var isRequired = operation.RequestBody.Required;
 
-                var type = GetType(content.Key, content.Value);
-                bodyParameter = $"{Shared.ToSnakeCase(name.Value)}: {type}";
+                if (operation.RequestBody.Extensions.TryGetValue("x-name", out var value))
+                {
+                    if (value is not OpenApiString openApiString)
+                        throw new Exception("The actual x-name value type is not supported.");
+
+                    var anonymousRequestTypeName = $"{methodName}Request";
+
+                    type = GetType(content.Key, content.Value, anonymousTypeName: anonymousRequestTypeName, isRequired: isRequired);
+                    name = openApiString.Value;
+                }
+                else
+                {
+                    type = isRequired ? "object" : "Optional[object]";
+                    name = "body";
+                }
+
+                bodyParameter = $"{Shared.ToSnakeCase(name)}: {type}";
             }
 
             var parametersString = bodyParameter == default
@@ -563,5 +613,14 @@ $@"    {propertyName}: {type}
 
             return $"{Shared.ToSnakeCase(asyncMethodName)}(self, {parametersString})";
         }
+    }
+
+    private static string? GetFirstLine(string? value)
+    {
+        if (value is null)
+            return null;
+
+        using var reader = new StringReader(value);
+        return reader.ReadLine();
     }
 }

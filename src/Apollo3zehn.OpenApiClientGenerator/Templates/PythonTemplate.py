@@ -9,27 +9,41 @@ T = TypeVar("T")
 
 {{{Encoder}}}
 
+{{#Special_NexusFeatures}}
 import asyncio
 import base64
+{{/Special_NexusFeatures}}
+{{#Special_RefreshTokenSupport}}
 import hashlib
+{{/Special_RefreshTokenSupport}}
 import json
+{{#Special_RefreshTokenSupport}}
 import os
+{{/Special_RefreshTokenSupport}}
+{{#Special_NexusFeatures}}
 import time
-import typing
 from array import array
+{{/Special_NexusFeatures}}
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+{{#Special_RefreshTokenSupport}}
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock
+{{/Special_RefreshTokenSupport}}
 from typing import (Any, AsyncIterable, Awaitable, Callable, Iterable,
                     Optional, Type, Union, cast)
 from urllib.parse import quote
 from uuid import UUID
+{{#Special_NexusFeatures}}
 from zipfile import ZipFile
+{{/Special_NexusFeatures}}
 
-from httpx import AsyncClient, Client, Request, Response, codes
+from httpx import AsyncClient, Client, Request, Response
+{{#Special_RefreshTokenSupport}}
+from httpx import codes
+{{/Special_RefreshTokenSupport}}
 
 def _to_string(value: Any) -> str:
 
@@ -43,8 +57,8 @@ def _to_string(value: Any) -> str:
         return str(value)
 
 _json_encoder_options: JsonEncoderOptions = JsonEncoderOptions(
-    property_name_encoder=to_camel_case,
-    property_name_decoder=to_snake_case
+    property_name_encoder=lambda value: to_camel_case(value) if value != "class_" else "class",
+    property_name_decoder=lambda value: to_snake_case(value) if value != "class" else "_class"
 )
 
 _json_encoder_options.encoders[Enum] = lambda value: to_camel_case(value.name)

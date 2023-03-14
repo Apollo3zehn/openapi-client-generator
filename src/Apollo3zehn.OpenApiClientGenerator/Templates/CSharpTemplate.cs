@@ -1,18 +1,24 @@
 ﻿#nullable enable
 
-using System.Buffers;
 {{#Special_NexusFeatures}}
+using System.Buffers;
 using System.Diagnostics;
 {{/Special_NexusFeatures}}
 using System.Globalization;
 {{#Special_NexusFeatures}}
 using System.IO.Compression;
 {{/Special_NexusFeatures}}
+{{#Special_RefreshTokenSupport}}
 using System.Net;
+{{/Special_RefreshTokenSupport}}
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+{{#Special_NexusFeatures}}
 using System.Runtime.InteropServices;
+{{/Special_NexusFeatures}}
+{{#Special_RefreshTokenSupport}}
 using System.Security.Cryptography;
+{{/Special_RefreshTokenSupport}}
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -153,7 +159,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             actualRefreshToken = refreshToken;
         }
 
-        await RefreshTokenAsync(actualRefreshToken, cancellationToken);
+        await RefreshTokenAsync(actualRefreshToken, cancellationToken).ConfigureAwait(false);
     }
 {{/Special_RefreshTokenSupport}}
 
@@ -278,7 +284,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         using var request = BuildRequestMessage(method, relativeUrl, content, contentTypeValue, acceptHeaderValue);
 
         // send request
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
         // process response
         if (!response.IsSuccessStatusCode)
@@ -298,10 +304,10 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
                     {
                         try
                         {
-                            await RefreshTokenAsync(_tokenPair.RefreshToken, cancellationToken);
+                            await RefreshTokenAsync(_tokenPair.RefreshToken, cancellationToken).ConfigureAwait(false);
 
                             using var newRequest = BuildRequestMessage(method, relativeUrl, content, contentTypeValue, acceptHeaderValue);
-                            var newResponse = await _httpClient.SendAsync(newRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                            var newResponse = await _httpClient.SendAsync(newRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
                             if (newResponse is not null)
                             {
@@ -324,7 +330,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                var message = await response.Content.ReadAsStringAsync();
+                var message = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 var statusCode = $"{{{ExceptionCodePrefix}}}00.{(int)response.StatusCode}";
 
                 if (string.IsNullOrWhiteSpace(message))
@@ -349,11 +355,11 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
             else
             {
-                var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
                 try
                 {
-                    return (await JsonSerializer.DeserializeAsync<T>(stream, Utilities.JsonOptions))!;
+                    return (await JsonSerializer.DeserializeAsync<T>(stream, Utilities.JsonOptions).ConfigureAwait(false))!;
                 }
                 catch (Exception ex)
                 {
@@ -430,7 +436,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
     private async Task RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
-        await _semaphoreSlim.WaitAsync();
+        await _semaphoreSlim.WaitAsync().ConfigureAwait(false);
 
         try
         {
@@ -441,7 +447,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             // see https://github.com/AzureAD/azure-activedirectory-identitymodel-extensions-for-dotnet/blob/dev/src/Microsoft.IdentityModel.Tokens/Validators.cs#L390
 
             var refreshRequest = new RefreshTokenRequest(refreshToken);
-            var tokenPair = await Users.RefreshTokenAsync(refreshRequest, cancellationToken);
+            var tokenPair = await Users.RefreshTokenAsync(refreshRequest, cancellationToken).ConfigureAwait(false);
 
             if (_tokenFilePath is not null)
             {
@@ -550,14 +556,14 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         Action<double>? onProgress = default,
         CancellationToken cancellationToken = default)
     {
-        var catalogItemMap = await Catalogs.SearchCatalogItemsAsync(resourcePaths.ToList());
+        var catalogItemMap = await Catalogs.SearchCatalogItemsAsync(resourcePaths.ToList()).ConfigureAwait(false);
         var result = new Dictionary<string, DataResponse>();
         var progress = 0.0;
 
         foreach (var (resourcePath, catalogItem) in catalogItemMap)
         {
-            using var responseMessage = await Data.GetStreamAsync(resourcePath, begin, end, cancellationToken);
-            var doubleData = await ReadAsDoubleAsync(responseMessage, useAsync: true, cancellationToken);
+            using var responseMessage = await Data.GetStreamAsync(resourcePath, begin, end, cancellationToken).ConfigureAwait(false);
+            var doubleData = await ReadAsDoubleAsync(responseMessage, useAsync: true, cancellationToken).ConfigureAwait(false);
             var resource = catalogItem.Resource;
 
             string? unit = default;
@@ -614,14 +620,14 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         var byteBuffer = new CastMemoryManager<double, byte>(doubleBuffer).Memory;
 
         Stream stream = useAsync
-            ? await responseMessage.Content.ReadAsStreamAsync(cancellationToken)
+            ? await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false)
             : responseMessage.Content.ReadAsStream(cancellationToken);
 
         var remainingBuffer = byteBuffer;
 
         while (!remainingBuffer.IsEmpty)
         {
-            var bytesRead = await stream.ReadAsync(remainingBuffer, cancellationToken);
+            var bytesRead = await stream.ReadAsync(remainingBuffer, cancellationToken).ConfigureAwait(false);
 
             if (bytesRead == 0)
                 throw new Exception("The stream ended early.");
@@ -652,12 +658,12 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         var elementCount = length.Value / 8;
         var doubleBuffer = new double[elementCount];
         var byteBuffer = new CastMemoryManager<double, byte>(doubleBuffer).Memory;
-        var stream = await responseMessage.Content.ReadAsStreamAsync(cancellationToken);
+        var stream = await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var remainingBuffer = byteBuffer;
 
         while (!remainingBuffer.IsEmpty)
         {
-            var bytesRead = await stream.ReadAsync(remainingBuffer, cancellationToken);
+            var bytesRead = await stream.ReadAsync(remainingBuffer, cancellationToken).ConfigureAwait(false);
 
             if (bytesRead == 0)
                 throw new Exception("The stream ended early.");
@@ -840,16 +846,16 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             actualConfiguration);
 
         // Start Job
-        var job = await Jobs.ExportAsync(exportParameters);
+        var job = await Jobs.ExportAsync(exportParameters).ConfigureAwait(false);
 
         // Wait for job to finish
         string? artifactId = default;
 
         while (true)
         {
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
 
-            var jobStatus = await Jobs.GetJobStatusAsync(job.Id, cancellationToken);
+            var jobStatus = await Jobs.GetJobStatusAsync(job.Id, cancellationToken).ConfigureAwait(false);
 
             if (jobStatus.Status == TaskStatus.Canceled)
                 throw new OperationCanceledException("The job has been cancelled.");
@@ -880,8 +886,8 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             return;
 
         // Download zip file
-        var responseMessage = await Artifacts.DownloadAsync(artifactId, cancellationToken);
-        var sourceStream = await responseMessage.Content.ReadAsStreamAsync();
+        var responseMessage = await Artifacts.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
+        var sourceStream = await responseMessage.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
         long? length = default;
 
