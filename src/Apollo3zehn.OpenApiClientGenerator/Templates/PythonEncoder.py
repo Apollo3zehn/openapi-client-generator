@@ -8,6 +8,10 @@ from typing import (Any, Callable, ClassVar, Optional, Type, Union,
                     cast)
 from uuid import UUID
 
+from typing import TypeVar
+
+T = TypeVar("T")
+
 @dataclass(frozen=True)
 class JsonEncoderOptions:
 

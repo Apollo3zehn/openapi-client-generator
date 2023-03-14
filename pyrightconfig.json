@@ -1,0 +1,15 @@
+{
+  "include": [
+    "src/Apollo3zehn.OpenApiClientGenerator/Templates/PythonEncoder.py",
+    "tests/templates/python",
+  ],
+  "stubPath": "",
+  "executionEnvironments":[
+    {
+      "root": ".",
+      "extraPaths": [
+        "src/Apollo3zehn.OpenApiClientGenerator/Templates",
+      ]
+    }
+  ]
+}

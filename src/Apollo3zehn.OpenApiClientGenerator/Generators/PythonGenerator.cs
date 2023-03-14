@@ -18,6 +18,12 @@ public class PythonGenerator
     private readonly GeneratorSettings _settings;
     private Dictionary<string, string> _additionalModels = default!;
 
+    private readonly Dictionary<string, string> _methodNameSuffixes = new()
+    {
+        ["application/octet-stream"] = "_as_stream",
+        ["application/json"] = "_as_json"
+    };
+
     public PythonGenerator(GeneratorSettings settings)
     {
         _settings = settings;
@@ -247,31 +253,70 @@ $@"class {augmentedClassName}:
             if (entry.Value.Parameters.Any())
                 throw new Exception("Parameters on the path item level are not supported.");
 
+            // if (operation.Responses.Count != 1)
+            //     throw new Exception("Only a single response is supported.");
+
             foreach (var operation in entry.Value.Operations)
             {
-                AppendImplementationMethodSourceText(
-                    path: entry.Key,
-                    operation.Key,
-                    operation.Value,
-                    sourceTextBuilder,
-                    async);
+                var response = operation.Value.Responses.First();
 
-                sourceTextBuilder.AppendLine();
+                if (response.Value.Content.Count == 0)
+                {
+                    AppendImplementationMethodSourceText(
+                        path: entry.Key,
+                        methodSuffix: "",
+                        operation.Key,
+                        operation.Value,
+                        response,
+                        responseType: default,
+                        sourceTextBuilder,
+                        async);
+
+                    sourceTextBuilder.AppendLine();
+                }
+
+                else
+                {
+                    foreach (var responseType in response.Value.Content)
+                    {
+                        var methodSuffix = response.Value.Content.Count == 1
+                            ? ""
+                            : _methodNameSuffixes[responseType.Key];
+
+                        AppendImplementationMethodSourceText(
+                            path: entry.Key,
+                            methodSuffix,
+                            operation.Key,
+                            operation.Value,
+                            response,
+                            responseType,
+                            sourceTextBuilder,
+                            async);
+
+                        sourceTextBuilder.AppendLine();
+                    }
+                }
             }
         }
     }
 
     private void AppendImplementationMethodSourceText(
         string path,
+        string methodSuffix,
         OperationType operationType,
         OpenApiOperation operation,
+        KeyValuePair<string, OpenApiResponse> response,
+        KeyValuePair<string, OpenApiMediaType>? responseType,
         StringBuilder sourceTextBuilder,
         bool async)
     {
         var signature = GetMethodSignature(
             path,
+            methodSuffix,
             operationType,
             operation,
+            response,
+            responseType,
             out var returnType,
             out var parameters,
             out var bodyParameter);
@@ -349,11 +394,9 @@ $@"class {augmentedClassName}:
         if (isVoidReturnType)
             returnType = "type(None)";
 
-        var response = operation.Responses.First().Value.Content.FirstOrDefault();
-
-        var acceptHeaderValue = response.Equals(default(KeyValuePair<string, OpenApiMediaType>))
-            ? "None"
-            : $"\"{response.Key}\"";
+        var acceptHeaderValue = responseType.HasValue
+            ? $"\"{responseType.Value.Key}\""
+            : "None";
 
         var contentTypeValue = operation.RequestBody is null
             ? "None"
@@ -481,7 +524,7 @@ $@"    {propertyName}: {type}
                 ("string", "date-time", _) => "datetime",
                 ("string", _, _) => "str",
                 ("array", _, _) => $"list[{GetType(schema.Items, anonymousTypeName, isRequired)}]",
-                ("object", _, null) => $"dict[str, {GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema)}]",
+                ("object", _, null) => GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema),
                 ("object", _, _) => $"dict[str, {GetType(schema.AdditionalProperties, anonymousTypeName, isRequired)}]",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
@@ -510,10 +553,13 @@ $@"    {propertyName}: {type}
         return modelName;
     }
 
-    private string GetMethodSignature(
+     private string GetMethodSignature(
         string path,
+        string methodSuffix,
         OperationType operationType,
         OpenApiOperation operation,
+        KeyValuePair<string, OpenApiResponse> response,
+        KeyValuePair<string, OpenApiMediaType>? responseType,
         out string returnType,
         out IEnumerable<(string, OpenApiParameter)> parameters,
         out string? bodyParameter)
@@ -524,28 +570,18 @@ $@"    {propertyName}: {type}
             operationType == OperationType.Delete))
             throw new Exception("Only get, put, post or delete operations are supported.");
 
-        var methodName = _settings.GetOperationName(path, operationType, operation);
+        var methodName = _settings.GetOperationName(path, operationType, operation) + methodSuffix;
         var asyncMethodName = methodName; // + "Async";
 
-        // if (operation.Responses.Count != 1)
-        //     throw new Exception("Only a single response is supported.");
-
-        var responseEntry = operation.Responses.First();
-        var responseType = responseEntry.Key;
-        var response = responseEntry.Value;
-
-        if (!(responseType == "200" || responseType == "201"))
-            throw new Exception("Only response type '200' or '201' is supported.");
+        if (!(response.Key == "200" || response.Key == "201"))
+            throw new Exception("Only response types '200' or '201' are supported.");
 
         var anonymousReturnTypeName = $"{methodName}Response";
 
-        returnType = response.Content.Count switch
+        returnType = responseType.HasValue switch
         {
-            0 => string.Empty,
-            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), anonymousReturnTypeName, isRequired: true, returnValue: true)}",
-            // TODO this is a workaround
-            2 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), anonymousReturnTypeName, isRequired: true, returnValue: true)}",
-            _ => throw new Exception("Only zero or one response contents are supported.")
+            true => $"{GetType(responseType.Value.Key, responseType.Value.Value, anonymousReturnTypeName, isRequired: true, returnValue: true)}",
+            false => string.Empty
         };
 
         parameters = Enumerable.Empty<(string, OpenApiParameter)>();

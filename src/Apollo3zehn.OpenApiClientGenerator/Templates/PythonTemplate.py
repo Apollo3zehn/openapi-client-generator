@@ -3,10 +3,6 @@
 # Python <= 3.9
 from __future__ import annotations
 
-from typing import TypeVar
-
-T = TypeVar("T")
-
 {{{Encoder}}}
 
 {{#Special_NexusFeatures}}

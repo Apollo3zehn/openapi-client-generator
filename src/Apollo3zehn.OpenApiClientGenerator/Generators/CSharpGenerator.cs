@@ -11,6 +11,12 @@ public class CSharpGenerator
     private readonly GeneratorSettings _settings;
     private Dictionary<string, string> _additionalModels = default!;
 
+    private readonly Dictionary<string, string> _methodNameSuffixes = new()
+    {
+        ["application/octet-stream"] = "AsStream",
+        ["application/json"] = "AsJson"
+    };
+
     public CSharpGenerator(GeneratorSettings settings)
     {
         _settings = settings;
@@ -162,25 +168,73 @@ public interface I{augmentedClassName}
             if (entry.Value.Parameters.Any())
                 throw new Exception("Parameters on the path item level are not supported.");
 
+            // if (operation.Responses.Count != 1)
+            //     throw new Exception("Only a single response is supported.");
+
             foreach (var operation in entry.Value.Operations)
             {
-                AppendInterfaceMethodSourceText(
-                    path: entry.Key,
-                    operation.Key,
-                    operation.Value,
-                    sourceTextBuilder,
-                    async: false);
+                var response = operation.Value.Responses.First();
 
-                sourceTextBuilder.AppendLine();
+                if (response.Value.Content.Count == 0)
+                {
+                    AppendInterfaceMethodSourceText(
+                        path: entry.Key,
+                        methodSuffix: "",
+                        operation.Key,
+                        operation.Value,
+                        response,
+                        responseType: default,
+                        sourceTextBuilder,
+                        async: false);
 
-                AppendInterfaceMethodSourceText(
-                    path: entry.Key,
-                    operation.Key,
-                    operation.Value,
-                    sourceTextBuilder,
-                    async: true);
+                    sourceTextBuilder.AppendLine();
 
-                sourceTextBuilder.AppendLine();
+                    AppendInterfaceMethodSourceText(
+                        path: entry.Key,
+                        methodSuffix: "",
+                        operation.Key,
+                        operation.Value,
+                        response,
+                        responseType: default,
+                        sourceTextBuilder,
+                        async: true);
+
+                    sourceTextBuilder.AppendLine();   
+                }
+
+                else
+                {
+                    foreach (var responseType in response.Value.Content)
+                    {
+                        var methodSuffix = response.Value.Content.Count == 1
+                            ? ""
+                            : _methodNameSuffixes[responseType.Key];
+
+                        AppendInterfaceMethodSourceText(
+                            path: entry.Key,
+                            methodSuffix,
+                            operation.Key,
+                            operation.Value,
+                            response,
+                            responseType,
+                            sourceTextBuilder,
+                            async: false);
+
+                        sourceTextBuilder.AppendLine();
+
+                        AppendInterfaceMethodSourceText(
+                            path: entry.Key,
+                            methodSuffix,
+                            operation.Key,
+                            operation.Value,
+                            response,
+                            responseType,
+                            sourceTextBuilder,
+                            async: true);
+
+                        sourceTextBuilder.AppendLine();   
+                    }
+                }
             }
         }
 
@@ -207,25 +261,73 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
             if (entry.Value.Parameters.Any())
                 throw new Exception("Parameters on the path item level are not supported.");
 
+            // if (operation.Responses.Count != 1)
+            //     throw new Exception("Only a single response is supported.");
+
             foreach (var operation in entry.Value.Operations)
             {
-                AppendImplementationMethodSourceText(
-                    path: entry.Key,
-                    operation.Key,
-                    operation.Value,
-                    sourceTextBuilder,
-                    async: false);
+                var response = operation.Value.Responses.First();
 
-                sourceTextBuilder.AppendLine();
+                if (response.Value.Content.Count == 0)
+                {
+                    AppendImplementationMethodSourceText(
+                        path: entry.Key,
+                        methodSuffix: "",
+                        operation.Key,
+                        operation.Value,
+                        response,
+                        responseType: default,
+                        sourceTextBuilder,
+                        async: false);
 
-                AppendImplementationMethodSourceText(
-                    path: entry.Key,
-                    operation.Key,
-                    operation.Value,
-                    sourceTextBuilder,
-                    async: true);
+                    sourceTextBuilder.AppendLine();
 
-                sourceTextBuilder.AppendLine();
+                    AppendImplementationMethodSourceText(
+                        path: entry.Key,
+                        methodSuffix: "",
+                        operation.Key,
+                        operation.Value,
+                        response,
+                        responseType: default,
+                        sourceTextBuilder,
+                        async: true);
+
+                    sourceTextBuilder.AppendLine();   
+                }
+
+                else
+                {
+                    foreach (var responseType in response.Value.Content)
+                    {
+                        var methodSuffix = response.Value.Content.Count == 1
+                            ? ""
+                            : _methodNameSuffixes[responseType.Key];
+
+                        AppendImplementationMethodSourceText(
+                            path: entry.Key,
+                            methodSuffix,
+                            operation.Key,
+                            operation.Value,
+                            response,
+                            responseType,
+                            sourceTextBuilder,
+                            async: false);
+
+                        sourceTextBuilder.AppendLine();
+
+                        AppendImplementationMethodSourceText(
+                            path: entry.Key,
+                            methodSuffix,
+                            operation.Key,
+                            operation.Value,
+                            response,
+                            responseType,
+                            sourceTextBuilder,
+                            async: true);
+
+                        sourceTextBuilder.AppendLine();
+                    }
+                }
             }
         }
 
@@ -234,15 +336,21 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
 
     private void AppendInterfaceMethodSourceText(
         string path,
+        string methodSuffix,
         OperationType operationType,
         OpenApiOperation operation,
+        KeyValuePair<string, OpenApiResponse> response,
+        KeyValuePair<string, OpenApiMediaType>? responseType,
         StringBuilder sourceTextBuilder,
         bool async)
     {
         var signature = GetMethodSignature(
             path,
+            methodSuffix,
             operationType,
             operation,
+            response,
+            responseType,
             async: async,
             out var returnType,
             out var parameters,
@@ -273,15 +381,21 @@ $@"    /// <summary>
 
     private void AppendImplementationMethodSourceText(
         string path,
+        string methodSuffix,
         OperationType operationType,
         OpenApiOperation operation,
+        KeyValuePair<string, OpenApiResponse> response,
+        KeyValuePair<string, OpenApiMediaType>? responseType,
         StringBuilder sourceTextBuilder,
         bool async)
     {
         var signature = GetMethodSignature(
             path,
+            methodSuffix,
             operationType,
             operation,
+            response,
+            responseType,
             async: async,
             out var returnType,
             out var parameters,
@@ -359,11 +473,9 @@ $@"    /// <summary>
         if (isVoidReturnType)
             returnType = "object";
 
-        var response = operation.Responses.First().Value.Content.FirstOrDefault();
-
-        var acceptHeaderValue = response.Equals(default(KeyValuePair<string, OpenApiMediaType>))
-            ? "default"
-            : $"\"{response.Key}\"";
+        var acceptHeaderValue = responseType.HasValue
+            ? $"\"{responseType.Value.Key}\""
+            : "default";
 
         var contentTypeValue = operation.RequestBody is null
             ? "default"
@@ -506,7 +618,7 @@ $@"    /// <summary>
                 ("string", "date-time", _) => "DateTime",
                 ("string", _, _) => "string",
                 ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items, anonymousTypeName, isRequired)}>",
-                ("object", _, null) => $"IReadOnlyDictionary<string, {GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema)}>",
+                ("object", _, null) => GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema),
                 ("object", _, _) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties, anonymousTypeName, isRequired)}>",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
@@ -537,8 +649,11 @@ $@"    /// <summary>
 
     private string GetMethodSignature(
         string path,
+        string methodSuffix,
         OperationType operationType,
         OpenApiOperation operation,
+        KeyValuePair<string, OpenApiResponse> response,
+        KeyValuePair<string, OpenApiMediaType>? responseType,
         bool async,
         out string returnType,
         out IEnumerable<(string, OpenApiParameter)> parameters,
@@ -550,26 +665,18 @@ $@"    /// <summary>
             operationType == OperationType.Delete))
             throw new Exception("Only get, put, post or delete operations are supported.");
 
-        var methodName = _settings.GetOperationName(path, operationType, operation);
+        var methodName = _settings.GetOperationName(path, operationType, operation) + methodSuffix;
         var asyncMethodName = methodName + "Async";
 
-        // if (operation.Responses.Count != 1)
-        //     throw new Exception("Only a single response is supported.");
-
-        var responseEntry = operation.Responses.First();
-        var responseType = responseEntry.Key;
-        var response = responseEntry.Value;
-
-        if (!(responseType == "200" || responseType == "201"))
-            throw new Exception("Only response type '200' or '201' is supported.");
+        if (!(response.Key == "200" || response.Key == "201"))
+            throw new Exception("Only response types '200' or '201' are supported.");
 
         var anonymousReturnTypeName = $"{methodName}Response";
 
-        returnType = response.Content.Count switch
+        returnType = responseType.HasValue switch
         {
-            0 => string.Empty,
-            1 => $"{GetType(response.Content.Keys.First(), response.Content.Values.First(), anonymousReturnTypeName, isRequired: true, returnValue: true)}",
-            _ => throw new Exception("Only zero or one response contents are supported.")
+            true => $"{GetType(responseType.Value.Key, responseType.Value.Value, anonymousReturnTypeName, isRequired: true, returnValue: true)}",
+            false => string.Empty
         };
 
         parameters = Enumerable.Empty<(string, OpenApiParameter)>();
