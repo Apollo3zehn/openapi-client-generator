@@ -1,4 +1,4 @@
-# apollo3zehn-openapi-client-generator
+# Apollo3zehn.OpenApiClientGenerator
 
 [![GitHub Actions](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions) [![NuGet](https://img.shields.io/nuget/v/FluentModbus.svg?label=Nuget)](https://www.nuget.org/packages/Apollo3zehn.OpenApiClientGenerator)
 
