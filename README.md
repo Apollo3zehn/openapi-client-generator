@@ -1,6 +1,6 @@
 # Apollo3zehn.OpenApiClientGenerator
 
-[![GitHub Actions](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions) [![NuGet](https://img.shields.io/nuget/v/FluentModbus.svg?label=Nuget)](https://www.nuget.org/packages/Apollo3zehn.OpenApiClientGenerator)
+[![GitHub Actions](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/Apollo3zehn/apollo3zehn-openapi-client-generator/actions) [![NuGet](https://img.shields.io/nuget/v/Apollo3zehn.OpenApiClientGenerator?label=Nuget)](https://www.nuget.org/packages/Apollo3zehn.OpenApiClientGenerator)
 
 - This project provides an OpenAPI client generator, i.e. it takes an openapi.json file as input and generates the corresponding output.
 - The generator code has been tested on three different projects but is yet fully generic, so it might not lead to perfect results in your case. Please file an issue if you run into problems.
