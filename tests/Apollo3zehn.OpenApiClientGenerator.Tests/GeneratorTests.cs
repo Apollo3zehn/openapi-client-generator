@@ -32,11 +32,5 @@ public class GeneratorTests
         // Act
         var csharpCode = csharpGenerator.Generate(document);
         var pythonCode = pythonGenerator.Generate(document);
-
-        // Assert
-
-        // TODO: REMOVE THIS LATER
-        File.WriteAllText("/home/vincent/Downloads/clients/dotnet.cs", csharpCode);
-        File.WriteAllText("/home/vincent/Downloads/clients/python.py", pythonCode);
     }
 }
