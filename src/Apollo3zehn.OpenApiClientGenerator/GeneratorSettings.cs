@@ -10,6 +10,7 @@ namespace Apollo3zehn.OpenApiClientGenerator
         string ExceptionType,
         string ExceptionCodePrefix,
         Func<string, OperationType, OpenApiOperation, string> GetOperationName,
+        bool Special_WebAssemblySupport,
         bool Special_RefreshTokenSupport,
         bool Special_NexusFeatures);
 }

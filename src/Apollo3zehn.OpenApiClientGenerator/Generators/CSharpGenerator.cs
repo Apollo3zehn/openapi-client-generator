@@ -141,6 +141,7 @@ $@"    /// <summary>
             ExceptionType = _settings.ExceptionType,
             ExceptionCodePrefix = _settings.ExceptionCodePrefix,
             Models = models,
+            Special_WebAssemblySupport = _settings.Special_WebAssemblySupport,
             Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };

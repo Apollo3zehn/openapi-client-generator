@@ -66,6 +66,7 @@ public class GeneratorTests
 
                 return $"{type}{methodName}";
             },
+            Special_WebAssemblySupport: false,
             Special_RefreshTokenSupport: false,
             Special_NexusFeatures: false);
 

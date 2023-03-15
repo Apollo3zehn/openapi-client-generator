@@ -373,8 +373,10 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
                 response.Dispose();
         }
     }
-    
+
+{{#Special_WebAssemblySupport}}
     private static readonly HttpRequestOptionsKey<bool> WebAssemblyEnableStreamingResponseKey = new HttpRequestOptionsKey<bool>("WebAssemblyEnableStreamingResponse");
+{{/Special_WebAssemblySupport}}
 
     private HttpRequestMessage BuildRequestMessage(string method, string relativeUrl, HttpContent? content, string? contentTypeHeaderValue, string? acceptHeaderValue)
     {
@@ -391,10 +393,12 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         if (acceptHeaderValue is not null)
             requestMessage.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(acceptHeaderValue));
 
+{{#Special_WebAssemblySupport}}
         // For web assembly
         // https://docs.microsoft.com/de-de/dotnet/api/microsoft.aspnetcore.components.webassembly.http.webassemblyhttprequestmessageextensions.setbrowserresponsestreamingenabled?view=aspnetcore-6.0
         // https://github.com/dotnet/aspnetcore/blob/0ee742c53f2669fd7233df6da89db5e8ab944585/src/Components/WebAssembly/WebAssembly/src/Http/WebAssemblyHttpRequestMessageExtensions.cs
         requestMessage.Options.Set(WebAssemblyEnableStreamingResponseKey, true);
+{{/Special_WebAssemblySupport}}
 
         return requestMessage;
     }
