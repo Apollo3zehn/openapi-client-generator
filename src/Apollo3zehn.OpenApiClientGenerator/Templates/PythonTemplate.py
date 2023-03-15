@@ -54,7 +54,7 @@ def _to_string(value: Any) -> str:
 
 _json_encoder_options: JsonEncoderOptions = JsonEncoderOptions(
     property_name_encoder=lambda value: to_camel_case(value) if value != "class_" else "class",
-    property_name_decoder=lambda value: to_snake_case(value) if value != "class" else "_class"
+    property_name_decoder=lambda value: to_snake_case(value) if value != "class" else "class_"
 )
 
 _json_encoder_options.encoders[Enum] = lambda value: to_camel_case(value.name)
