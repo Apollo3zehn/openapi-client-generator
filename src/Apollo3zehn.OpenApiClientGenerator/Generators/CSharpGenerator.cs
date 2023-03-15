@@ -538,7 +538,7 @@ $@"    /// <summary>
         {
             var parameters = schema.Properties is null
                ? string.Empty
-               : GetProperties(schema.Properties);
+               : GetProperties(schema.Properties, anonymousTypePrefix: modelName);
 
             sourceTextBuilder.AppendLine(
 @$"/// <summary>
@@ -570,12 +570,12 @@ $@"    /// <summary>
         };
     }
 
-    private string GetProperties(IDictionary<string, OpenApiSchema> propertyMap)
+    private string GetProperties(IDictionary<string, OpenApiSchema> propertyMap, string anonymousTypePrefix)
     {
         var methodParameters = propertyMap.Select(entry =>
         {
             var parameterName = Shared.FirstCharToUpper(entry.Key);
-            var anonymousTypeName = $"{parameterName}Type";
+            var anonymousTypeName = $"{anonymousTypePrefix}{parameterName}Type";
             var type = GetType(entry.Value, anonymousTypeName, isRequired: true);
             return $"{type} {parameterName}";
         });
@@ -675,7 +675,13 @@ $@"    /// <summary>
 
         returnType = responseType.HasValue switch
         {
-            true => $"{GetType(responseType.Value.Key, responseType.Value.Value, anonymousReturnTypeName, isRequired: true, returnValue: true)}",
+            true => $"{GetType(
+                responseType.Value.Key, 
+                responseType.Value.Value, 
+                anonymousReturnTypeName,
+                isRequired: true, 
+                returnValue: true)}",
+
             false => string.Empty
         };
 

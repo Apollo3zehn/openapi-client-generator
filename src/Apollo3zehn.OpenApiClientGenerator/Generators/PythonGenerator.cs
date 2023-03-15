@@ -477,7 +477,8 @@ class {modelName}:");
                     if (propertyName == "class")
                         propertyName = "class_";
 
-                    var anonymousTypeName = $"{Shared.FirstCharToUpper(property.Key)}Type";
+                    var anonymousTypePrefix = modelName;
+                    var anonymousTypeName = $"{anonymousTypePrefix}{Shared.FirstCharToUpper(property.Key)}Type";
                     var type = GetType(property.Value, anonymousTypeName, isRequired: true);
 
                     sourceTextBuilder.AppendLine(
