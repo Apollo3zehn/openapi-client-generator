@@ -20,8 +20,8 @@ public class PythonGenerator
 
     private readonly Dictionary<string, string> _methodNameSuffixes = new()
     {
-        ["application/octet-stream"] = "_as_stream",
-        ["application/json"] = "_as_json"
+        ["application/octet-stream"] = "AsStream",
+        ["application/json"] = "AsJson"
     };
 
     public PythonGenerator(GeneratorSettings settings)

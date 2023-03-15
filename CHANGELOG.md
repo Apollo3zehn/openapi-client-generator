@@ -1,3 +1,7 @@
+## v1.0.0-beta.4 - 2023-03-15
+
+Fix type name generation if there is more than one response.
+
 ## v1.0.0-beta.3 - 2023-03-15
 
 Fix Python reserved keyword handling of keyword `class`.
