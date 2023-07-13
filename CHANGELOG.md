@@ -1,3 +1,7 @@
+## v1.0.0-beta.6 - 2023-07-13
+
+Fix pyright errors.
+
 ## v1.0.0-beta.5 - 2023-03-15
 
 Add switch to enable/disable webassembly support.
