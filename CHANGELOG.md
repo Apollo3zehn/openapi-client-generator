@@ -1,3 +1,7 @@
+## v1.0.0-beta.7 - 2024-02-28
+
+Fix pyright errors.
+
 ## v1.0.0-beta.6 - 2023-07-13
 
 Fix pyright errors.

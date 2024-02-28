@@ -561,7 +561,7 @@ $@"    /// <summary>
 
     private string GetParameterToStringCode(string parameterName, OpenApiSchema schema)
     {
-        var type = GetType(schema, anonymousTypeName: default, isRequired: true);
+        var type = GetType(schema, anonymousTypeName: default);
 
         return type switch
         {
@@ -577,24 +577,34 @@ $@"    /// <summary>
         {
             var parameterName = Shared.FirstCharToUpper(entry.Key);
             var anonymousTypeName = $"{anonymousTypePrefix}{parameterName}Type";
-            var type = GetType(entry.Value, anonymousTypeName, isRequired: true);
+            var type = GetType(entry.Value, anonymousTypeName);
             return $"{type} {parameterName}";
         });
 
         return string.Join(", ", methodParameters);
     }
 
-    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, string? anonymousTypeName, bool isRequired, bool returnValue = false)
+    private string ApplyRequired(string type, bool isRequired)
     {
-        return mediaTypeKey switch
-        {
-            "application/octet-stream" => returnValue ? "HttpResponseMessage" : "Stream",
-            "application/json" => GetType(mediaType.Schema, anonymousTypeName, isRequired),
-            _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
-        };
+        if (!type.EndsWith("?") && !isRequired)
+            type = $"{type}?";
+
+        return type;
     }
 
-    private string GetType(OpenApiSchema schema, string? anonymousTypeName, bool isRequired)
+    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, string? anonymousTypeName, bool returnValue = false)
+    {
+        var type = mediaTypeKey switch
+        {
+            "application/octet-stream" => returnValue ? "HttpResponseMessage" : "Stream",
+            "application/json" => GetType(mediaType.Schema, anonymousTypeName),
+            _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
+        };
+
+        return type;
+    }
+
+    private string GetType(OpenApiSchema schema, string? anonymousTypeName)
     {
         string type;
 
@@ -605,7 +615,7 @@ $@"    /// <summary>
                 (null, _, _) => schema.OneOf.Count switch
                 {
                     0 => "JsonElement",
-                    1 => GetType(schema.OneOf.First(), anonymousTypeName, isRequired),
+                    1 => GetType(schema.OneOf.First(), anonymousTypeName),
                     _ => throw new Exception("Only zero or one entries are supported.")
                 },
                 ("boolean", _, _) => "bool",
@@ -618,9 +628,9 @@ $@"    /// <summary>
                 ("string", "duration", _) => "TimeSpan",
                 ("string", "date-time", _) => "DateTime",
                 ("string", _, _) => "string",
-                ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items, anonymousTypeName, isRequired)}>",
+                ("array", _, _) => $"IReadOnlyList<{GetType(schema.Items, anonymousTypeName)}>",
                 ("object", _, null) => GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema),
-                ("object", _, _) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties, anonymousTypeName, isRequired)}>",
+                ("object", _, _) => $"IReadOnlyDictionary<string, {GetType(schema.AdditionalProperties, anonymousTypeName)}>",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
         }
@@ -630,7 +640,7 @@ $@"    /// <summary>
             type = schema.Reference.Id;
         }
 
-        return (schema.Nullable || !isRequired)
+        return schema.Nullable
             ? $"{type}?"
             : type;
     }
@@ -680,7 +690,6 @@ $@"    /// <summary>
                 responseType.Value.Key, 
                 responseType.Value.Value, 
                 anonymousReturnTypeName,
-                isRequired: true, 
                 returnValue: true)}",
 
             false => string.Empty
@@ -703,7 +712,7 @@ $@"    /// <summary>
             //     throw new Exception("Only path or query parameters are supported.");
             parameters = operation.Parameters
                 .Where(parameter => parameter.In == ParameterLocation.Query || parameter.In == ParameterLocation.Path)
-                .Select(parameter => ($"{GetType(parameter.Schema, anonymousTypeName: default, parameter.Required)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
+                .Select(parameter => ($"{ApplyRequired(GetType(parameter.Schema, anonymousTypeName: default), parameter.Required)} {parameter.Name}{(parameter.Required ? "" : " = default")}", parameter));
 
             if (operation.RequestBody is not null)
             {
@@ -727,7 +736,7 @@ $@"    /// <summary>
 
                     var anonymousRequestTypeName = $"{methodName}Request";
 
-                    type = GetType(content.Key, content.Value, anonymousTypeName: anonymousRequestTypeName, isRequired: operation.RequestBody.Required);
+                    type = ApplyRequired(GetType(content.Key, content.Value, anonymousTypeName: anonymousRequestTypeName), operation.RequestBody.Required);
                     name = openApiString.Value;
                 }
                 else

@@ -322,7 +322,7 @@ $@"class {augmentedClassName}:
             out var bodyParameter);
 
         var isVoidReturnType = string.IsNullOrWhiteSpace(returnType);
-        var actualReturnType = isVoidReturnType ? "None" : $"{returnType}";
+        var actualReturnType = isVoidReturnType ? "None" : returnType;
         var actualActualReturnType = async ? $"Awaitable[{actualReturnType}]" : actualReturnType;
 
         sourceTextBuilder.AppendLine(
@@ -411,6 +411,11 @@ $@"class {augmentedClassName}:
                 _ => throw new Exception($"The media type {operation.RequestBody!.Content.Keys.First()} is not supported.")
             };
 
+        // remove Optional to make type checker happy (https://github.com/microsoft/pyright/issues/684)
+        var invokeType = returnType.StartsWith("Optional[")
+            ? returnType.Substring(9, returnType.Length - 10)
+            : returnType;
+
         sourceTextBuilder.AppendLine();
         sourceTextBuilder.AppendLine($"        return self.___client._invoke({returnType}, \"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content})");
     }
@@ -479,7 +484,7 @@ class {modelName}:");
 
                     var anonymousTypePrefix = modelName;
                     var anonymousTypeName = $"{anonymousTypePrefix}{Shared.FirstCharToUpper(property.Key)}Type";
-                    var type = GetType(property.Value, anonymousTypeName, isRequired: true);
+                    var type = GetType(property.Value, anonymousTypeName);
 
                     sourceTextBuilder.AppendLine(
 $@"    {propertyName}: {type}
@@ -490,17 +495,27 @@ $@"    {propertyName}: {type}
         }
     }
 
-    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, string? anonymousTypeName, bool isRequired, bool returnValue = false)
+    private string ApplyRequired(string type, bool isRequired)
     {
-        return mediaTypeKey switch
-        {
-            "application/octet-stream" => returnValue ? "Response" : "Union[bytes, Iterable[bytes], AsyncIterable[bytes]]",
-            "application/json" => GetType(mediaType.Schema, anonymousTypeName, isRequired),
-            _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
-        };
+        if (!type.StartsWith("Optional[") && !isRequired)
+            type = $"Optional[{type}]";
+
+        return type;
     }
 
-    private string GetType(OpenApiSchema schema, string? anonymousTypeName, bool isRequired)
+    private string GetType(string mediaTypeKey, OpenApiMediaType mediaType, string? anonymousTypeName, bool returnValue = false)
+    {      
+        var type = mediaTypeKey switch
+        {
+            "application/octet-stream" => returnValue ? "Response" : "Union[bytes, Iterable[bytes], AsyncIterable[bytes]]",
+            "application/json" => GetType(mediaType.Schema, anonymousTypeName),
+            _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
+        };
+
+        return type;
+    }
+
+    private string GetType(OpenApiSchema schema, string? anonymousTypeName)
     {
         string type;
 
@@ -511,7 +526,7 @@ $@"    {propertyName}: {type}
                 (null, _, _) => schema.OneOf.Count switch
                 {
                     0 => "object",
-                    1 => GetType(schema.OneOf.First(), anonymousTypeName, isRequired),
+                    1 => GetType(schema.OneOf.First(), anonymousTypeName),
                     _ => throw new Exception("Only zero or one entries are supported.")
                 },
                 ("boolean", _, _) => "bool",
@@ -524,9 +539,9 @@ $@"    {propertyName}: {type}
                 ("string", "duration", _) => "timedelta",
                 ("string", "date-time", _) => "datetime",
                 ("string", _, _) => "str",
-                ("array", _, _) => $"list[{GetType(schema.Items, anonymousTypeName, isRequired)}]",
+                ("array", _, _) => $"list[{GetType(schema.Items, anonymousTypeName)}]",
                 ("object", _, null) => GetAnonymousType(anonymousTypeName ?? throw new Exception("Type name required."), schema),
-                ("object", _, _) => $"dict[str, {GetType(schema.AdditionalProperties, anonymousTypeName, isRequired)}]",
+                ("object", _, _) => $"dict[str, {GetType(schema.AdditionalProperties, anonymousTypeName)}]",
                 (_, _, _) => throw new Exception($"The schema type {schema.Type} (or one of its formats) is not supported.")
             };
         }
@@ -536,7 +551,7 @@ $@"    {propertyName}: {type}
             type = schema.Reference.Id;
         }
 
-        return (schema.Nullable || !isRequired)
+        return schema.Nullable
             ? $"Optional[{type}]"
             : type;
     }
@@ -554,7 +569,7 @@ $@"    {propertyName}: {type}
         return modelName;
     }
 
-     private string GetMethodSignature(
+    private string GetMethodSignature(
         string path,
         string methodSuffix,
         OperationType operationType,
@@ -581,7 +596,7 @@ $@"    {propertyName}: {type}
 
         returnType = responseType.HasValue switch
         {
-            true => $"{GetType(responseType.Value.Key, responseType.Value.Value, anonymousReturnTypeName, isRequired: true, returnValue: true)}",
+            true => $"{GetType(responseType.Value.Key, responseType.Value.Value, anonymousReturnTypeName, returnValue: true)}",
             false => string.Empty
         };
 
@@ -601,7 +616,7 @@ $@"    {propertyName}: {type}
 
             parameters = operation.Parameters
                 .Where(parameter => parameter.In == ParameterLocation.Query || parameter.In == ParameterLocation.Path)
-                .Select(parameter => ($"{Shared.ToSnakeCase(parameter.Name)}: {GetType(parameter.Schema, anonymousTypeName: default, parameter.Required)}{(parameter.Required ? "" : " = None")}", parameter));
+                .Select(parameter => ($"{Shared.ToSnakeCase(parameter.Name)}: {ApplyRequired(GetType(parameter.Schema, anonymousTypeName: default), parameter.Required)}{(parameter.Required ? "" : " = None")}", parameter));
 
             if (operation.RequestBody is not null)
             {
@@ -625,7 +640,7 @@ $@"    {propertyName}: {type}
 
                     var anonymousRequestTypeName = $"{methodName}Request";
 
-                    type = GetType(content.Key, content.Value, anonymousTypeName: anonymousRequestTypeName, isRequired: isRequired);
+                    type = ApplyRequired(GetType(content.Key, content.Value, anonymousTypeName: anonymousRequestTypeName), isRequired);
                     name = openApiString.Value;
                 }
                 else

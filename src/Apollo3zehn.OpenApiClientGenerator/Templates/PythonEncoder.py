@@ -80,12 +80,12 @@ class JsonEncoder:
     def _decode(typeCls: Type[T], data: Any, options: JsonEncoderOptions) -> T:
        
         if data is None:
-            return typing.cast(T, None)
+            return cast(T, None)
 
         if typeCls == Any:
             return data
 
-        origin = typing.cast(Type, typing.get_origin(typeCls))
+        origin = typing.get_origin(typeCls)
         args = typing.get_args(typeCls)
 
         if origin is not None:
@@ -96,7 +96,7 @@ class JsonEncoder:
                 baseType = args[0]
                 instance3 = JsonEncoder._decode(baseType, data, options)
 
-                return typing.cast(T, instance3)
+                return cast(T, instance3)
 
             # list
             elif issubclass(origin, list):
@@ -107,7 +107,7 @@ class JsonEncoder:
                 for value in data:
                     instance1.append(JsonEncoder._decode(listType, value, options))
 
-                return typing.cast(T, instance1)
+                return cast(T, instance1)
             
             # dict
             elif issubclass(origin, dict):
@@ -120,7 +120,7 @@ class JsonEncoder:
                 for key, value in data.items():
                     instance2[key] = JsonEncoder._decode(valueType, value, options)
 
-                return typing.cast(T, instance2)
+                return cast(T, instance2)
 
             # default
             else:
@@ -135,7 +135,7 @@ class JsonEncoder:
             for key, value in data.items():
 
                 key = options.property_name_decoder(key)
-                parameter_type = typing.cast(Type, type_hints.get(key))
+                parameter_type = cast(Type, type_hints.get(key))
                 
                 if (parameter_type is not None):
                     value = JsonEncoder._decode(parameter_type, value, options)
@@ -154,7 +154,7 @@ class JsonEncoder:
                     else:
                         parameters[key] = None
               
-            instance = typing.cast(T, typeCls(**parameters))
+            instance = cast(T, typeCls(**parameters))
 
             return instance
 

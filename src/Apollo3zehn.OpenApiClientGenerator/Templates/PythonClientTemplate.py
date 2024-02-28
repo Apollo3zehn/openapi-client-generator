@@ -120,7 +120,7 @@ class {{{ClientName}}}{{{Async}}}Client:
             del self._http_client.headers[self._configuration_header_key]
 {{/Special_NexusFeatures}}
 
-    {{{Def}}} _invoke(self, typeOfT: Type[T], method: str, relative_url: str, accept_header_value: Optional[str], content_type_value: Optional[str], content: Union[None, str, bytes, Iterable[bytes], AsyncIterable[bytes]]) -> T:
+    {{{Def}}} _invoke(self, typeOfT: Optional[Type[T]], method: str, relative_url: str, accept_header_value: Optional[str], content_type_value: Optional[str], content: Union[None, str, bytes, Iterable[bytes], AsyncIterable[bytes]]) -> T:
 
         # prepare request
         request = self._build_request_message(method, relative_url, content, content_type_value, accept_header_value)
@@ -173,18 +173,18 @@ class {{{ClientName}}}{{{Async}}}Client:
         try:
 
             if typeOfT is type(None):
-                return typing.cast(T, type(None))
+                return cast(T, type(None))
 
             elif typeOfT is Response:
-                return typing.cast(T, response)
+                return cast(T, response)
 
             else:
 
                 jsonObject = json.loads(response.text)
-                return_value = JsonEncoder.decode(typeOfT, jsonObject, _json_encoder_options)
+                return_value = JsonEncoder.decode(cast(Type[T], typeOfT), jsonObject, _json_encoder_options)
 
                 if return_value is None:
-                    raise {{{ExceptionType}}}(f"{{{ExceptionCodePrefix}}}01", "Response data could not be deserialized.")
+                    raise {{{ExceptionType}}}("{{{ExceptionCodePrefix}}}01", "Response data could not be deserialized.")
 
                 return return_value
 
