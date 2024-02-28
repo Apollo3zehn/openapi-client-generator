@@ -417,7 +417,7 @@ $@"class {augmentedClassName}:
             : returnType;
 
         sourceTextBuilder.AppendLine();
-        sourceTextBuilder.AppendLine($"        return self.___client._invoke({returnType}, \"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content})");
+        sourceTextBuilder.AppendLine($"        return self.___client._invoke({invokeType}, \"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content})");
     }
 
     private void AppendModelSourceText(
