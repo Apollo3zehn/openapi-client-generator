@@ -19,15 +19,11 @@ class {{{ClientName}}}{{{Async}}}Client:
 {{#Special_NexusFeatures}}
     _configuration_header_key: str = "{{{ConfigurationHeaderKey}}}"
 {{/Special_NexusFeatures}}
-{{#Special_RefreshTokenSupport}}
+{{#Special_AccessTokenSupport}}
     _authorization_header_key: str = "Authorization"
 
-    _token_folder_path: str = os.path.join(str(Path.home()), "{{{TokenFolderName}}}", "tokens")
-    _mutex: Lock = Lock()
-
-    _token_pair: Optional[TokenPair]
-    _token_file_path: Optional[str]
-{{/Special_RefreshTokenSupport}}
+    _token: Optional[str]
+{{/Special_AccessTokenSupport}}
     _http_client: {{{Async}}}Client
 
 {{{SubClientFields}}}
@@ -54,47 +50,37 @@ class {{{ClientName}}}{{{Async}}}Client:
             raise Exception("The base url of the HTTP client must be set.")
 
         self._http_client = http_client
-        self._token_pair = None
+{{#Special_AccessTokenSupport}}
+        self._token = None
+{{/Special_AccessTokenSupport}}
 
 {{{SubClientFieldAssignments}}}
 
-{{#Special_RefreshTokenSupport}}
+{{#Special_AccessTokenSupport}}
     @property
     def is_authenticated(self) -> bool:
         """Gets a value which indicates if the user is authenticated."""
-        return self._token_pair is not None
-{{/Special_RefreshTokenSupport}}
+        return self._token is not None
+{{/Special_AccessTokenSupport}}
 
 {{{SubClientProperties}}}
 
-{{#Special_RefreshTokenSupport}}
-    {{{Def}}} sign_in(self, refresh_token: str):
+{{#Special_AccessTokenSupport}}
+    {{{Def}}} sign_in(self, access_token: str):
         """Signs in the user.
 
         Args:
-            token_pair: The refresh token.
+            access_token: The access token.
         """
 
-        actual_refresh_token: str
+        authorization_header_value = f"Bearer {access_token}"
 
-        sha256 = hashlib.sha256()
-        sha256.update(refresh_token.encode())
-        refresh_token_hash = sha256.hexdigest()
-        self._token_file_path = os.path.join(self._token_folder_path, refresh_token_hash + ".json")
-        
-        if Path(self._token_file_path).is_file():
-            with open(self._token_file_path) as file:
-                actual_refresh_token = file.read()
+        if self._authorization_header_key in self._http_client.headers:
+            del self._http_client.headers[self._authorization_header_key]
 
-        else:
-            Path(self._token_folder_path).mkdir(parents=True, exist_ok=True)
-
-            with open(self._token_file_path, "w") as file:
-                file.write(refresh_token)
-                actual_refresh_token = refresh_token
-                
-        {{{Await}}}self._refresh_token(actual_refresh_token)
-{{/Special_RefreshTokenSupport}}
+        self._http_client.headers[self._authorization_header_key] = authorization_header_value
+        self._token = access_token
+{{/Special_AccessTokenSupport}}
 
 {{#Special_NexusFeatures}}
     def attach_configuration(self, configuration: Any) -> Any:
@@ -131,44 +117,14 @@ class {{{ClientName}}}{{{Async}}}Client:
         # process response
         if not response.is_success:
             
-{{#Special_RefreshTokenSupport}}
-            # try to refresh the access token
-            if response.status_code == codes.UNAUTHORIZED and self._token_pair is not None:
+            message = response.text
+            status_code = f"{{{ExceptionCodePrefix}}}00.{response.status_code}"
 
-                www_authenticate_header = response.headers.get("WWW-Authenticate")
-                sign_out = True
+            if not message:
+                raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}.")
 
-                if www_authenticate_header is not None:
-
-                    if "The token expired at" in www_authenticate_header:
-
-                        try:
-                            {{{Await}}}self._refresh_token(self._token_pair.refresh_token)
-
-                            new_request = self._build_request_message(method, relative_url, content, content_type_value, accept_header_value)
-                            new_response = {{{Await}}}self._http_client.send(new_request)
-
-                            {{{Await}}}response.{{{Aclose}}}()
-                            response = new_response
-                            sign_out = False
-
-                        except:
-                            pass
-
-                if sign_out:
-                    self._sign_out()
-{{/Special_RefreshTokenSupport}}
-
-            if not response.is_success:
-
-                message = response.text
-                status_code = f"{{{ExceptionCodePrefix}}}00.{response.status_code}"
-
-                if not message:
-                    raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}.")
-
-                else:
-                    raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}. The response message is: {message}")
+            else:
+                raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}. The response message is: {message}")
 
         try:
 
@@ -203,45 +159,6 @@ class {{{ClientName}}}{{{Async}}}Client:
             request_message.headers["Accept"] = accept_header_value
 
         return request_message
-
-{{#Special_RefreshTokenSupport}}
-    {{{Def}}} _refresh_token(self, refresh_token: str):
-        self._mutex.acquire()
-
-        try:
-            # make sure the refresh token has not already been redeemed
-            if (self._token_pair is not None and refresh_token != self._token_pair.refresh_token):
-                return
-
-            # see https://github.com/AzureAD/azure-activedirectory-identitymodel-extensions-for-dotnet/blob/dev/src/Microsoft.IdentityModel.Tokens/Validators.cs#L390
-
-            refresh_request = RefreshTokenRequest(refresh_token)
-            token_pair = {{{Await}}}self.users.refresh_token(refresh_request)
-
-            if self._token_file_path is not None:
-                Path(self._token_folder_path).mkdir(parents=True, exist_ok=True)
-                
-                with open(self._token_file_path, "w") as file:
-                    file.write(token_pair.refresh_token)
-
-            authorizationHeaderValue = f"Bearer {token_pair.access_token}"
-
-            if self._authorization_header_key in self._http_client.headers:
-                del self._http_client.headers[self._authorization_header_key]
-
-            self._http_client.headers[self._authorization_header_key] = authorizationHeaderValue
-            self._token_pair = token_pair
-
-        finally:
-            self._mutex.release()
-
-    def _sign_out(self) -> None:
-
-        if self._authorization_header_key in self._http_client.headers:
-            del self._http_client.headers[self._authorization_header_key]
-
-        self._token_pair = None
-{{/Special_RefreshTokenSupport}}
 
     # "disposable" methods
     {{{Def}}} __{{{Enter}}}__(self) -> {{{ClientName}}}{{{Async}}}Client:

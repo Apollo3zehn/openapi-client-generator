@@ -1,3 +1,7 @@
+## v1.0.0-beta.8 - 2024-03-05
+
+Adapt to Nexus token changes.
+
 ## v1.0.0-beta.8 - 2024-02-28
 
 Fix pyright errors.

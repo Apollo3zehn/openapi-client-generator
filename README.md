@@ -80,7 +80,7 @@ public static class Program
                 return $"{type}{methodName}";
             },
             Special_WebAssemblySupport: false, /* Apollo3zehn-specific option */
-            Special_RefreshTokenSupport: false, /* Apollo3zehn-specific option */
+            Special_AccessTokenSupport: false, /* Apollo3zehn-specific option */
             Special_NexusFeatures: false); /* Apollo3zehn-specific option */
 
         // generate C# client

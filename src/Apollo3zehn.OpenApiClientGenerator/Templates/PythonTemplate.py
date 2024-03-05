@@ -9,13 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 {{/Special_NexusFeatures}}
-{{#Special_RefreshTokenSupport}}
-import hashlib
-{{/Special_RefreshTokenSupport}}
 import json
-{{#Special_RefreshTokenSupport}}
-import os
-{{/Special_RefreshTokenSupport}}
 {{#Special_NexusFeatures}}
 import time
 from array import array
@@ -23,11 +17,9 @@ from array import array
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-{{#Special_RefreshTokenSupport}}
-from pathlib import Path
+{{#Special_NexusFeatures}}
 from tempfile import NamedTemporaryFile
-from threading import Lock
-{{/Special_RefreshTokenSupport}}
+{{/Special_NexusFeatures}}
 from typing import (Any, AsyncIterable, Awaitable, Callable, Iterable,
                     Optional, Type, Union, cast)
 from urllib.parse import quote
@@ -37,9 +29,6 @@ from zipfile import ZipFile
 {{/Special_NexusFeatures}}
 
 from httpx import AsyncClient, Client, Request, Response
-{{#Special_RefreshTokenSupport}}
-from httpx import codes
-{{/Special_RefreshTokenSupport}}
 
 def _to_string(value: Any) -> str:
 

@@ -64,7 +64,7 @@ public class PythonGenerator
             Exit = "aexit",
             Read = "aread",
             For = "async for",
-            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
+            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
@@ -93,7 +93,7 @@ public class PythonGenerator
             Exit = "exit",
             Read = "read",
             For = "for",
-            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
+            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
@@ -143,7 +143,7 @@ public class PythonGenerator
             Models = models,
             AsyncClient = asyncClient,
             SyncClient = syncClient,
-            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
+            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 

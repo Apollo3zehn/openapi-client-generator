@@ -142,7 +142,7 @@ $@"    /// <summary>
             ExceptionCodePrefix = _settings.ExceptionCodePrefix,
             Models = models,
             Special_WebAssemblySupport = _settings.Special_WebAssemblySupport,
-            Special_RefreshTokenSupport = _settings.Special_RefreshTokenSupport,
+            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
