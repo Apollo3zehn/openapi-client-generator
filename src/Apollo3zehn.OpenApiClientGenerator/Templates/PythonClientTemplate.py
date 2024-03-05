@@ -66,7 +66,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 {{{SubClientProperties}}}
 
 {{#Special_AccessTokenSupport}}
-    {{{Def}}} sign_in(self, access_token: str):
+    def sign_in(self, access_token: str):
         """Signs in the user.
 
         Args:

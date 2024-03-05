@@ -1,3 +1,7 @@
+## v1.0.0-beta.10 - 2024-03-05
+
+Adapt to Nexus token changes.
+
 ## v1.0.0-beta.9 - 2024-03-05
 
 Adapt to Nexus token changes.
