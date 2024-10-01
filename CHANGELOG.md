@@ -1,3 +1,7 @@
+## v1.0.0-beta.12 - 2024-10-01
+
+Fixes wrong python import.
+
 ## v1.0.0-beta.11 - 2024-10-01
 
 Add versioned API support.
