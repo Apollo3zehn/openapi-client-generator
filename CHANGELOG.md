@@ -1,3 +1,7 @@
+## v1.0.0-beta.11 - 2024-10-01
+
+Add versioned API support.
+
 ## v1.0.0-beta.10 - 2024-03-05
 
 Adapt to Nexus token changes.
