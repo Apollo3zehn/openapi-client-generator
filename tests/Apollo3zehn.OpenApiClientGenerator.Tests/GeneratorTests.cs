@@ -89,7 +89,7 @@ public class GeneratorTests
         var pythonGenerator = new PythonGenerator(settings);
         var pythonCode = pythonGenerator.Generate(document_v1, document_v2);
 
-        File.WriteAllText("/home/vincent/Downloads/out/csharp.cs", csharpCode);
-        File.WriteAllText("/home/vincent/Downloads/out/python.py", pythonCode);
+        // File.WriteAllText("/home/vincent/Downloads/out/nexus_api/csharp.cs", csharpCode);
+        File.WriteAllText("/home/vincent/Downloads/out/nexus_api/Shared.py", pythonCode);
     }
 }

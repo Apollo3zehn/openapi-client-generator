@@ -49,6 +49,7 @@ public class PythonGenerator
 
         var moduleTemplate = moduleTemplateStreamReader.ReadToEnd();
 
+        var versioningImportsBuilder = new StringBuilder();
         var versioningFieldsBuilder = new StringBuilder();
         var versioningFieldAssignmentsBuilder = new StringBuilder();
         var versioningPropertiesBuilder = new StringBuilder();
@@ -69,9 +70,11 @@ public class PythonGenerator
                 version = Shared.FirstCharToUpper(version);
 
             // Versioning
+            versioningImportsBuilder.AppendLine($"from {version} import {version}");
+
             versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}");
 
-            versioningFieldAssignmentsBuilder.AppendLine($"        _{Shared.FirstCharToLower(version)} = {version}(self)");
+            versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}(self)");
 
             versioningPropertiesBuilder.AppendLine($"        @property");
             versioningPropertiesBuilder.AppendLine($"        def {version}(self) -> {version}:");
@@ -151,7 +154,7 @@ public class PythonGenerator
             var settings = new RenderSettings() { SkipHtmlEncoding = true };
             var module = stubble.Render(moduleTemplate, moduleData, settings);
 
-            File.WriteAllText($"/home/vincent/Downloads/out/{version}.py", module);
+            File.WriteAllText($"/home/vincent/Downloads/out/nexus_api/{version}.py", module);
         }
 
         // Main clients
@@ -211,7 +214,24 @@ public class PythonGenerator
 
         var asyncMainClient = stubble.Render(mainClientTemplate, asyncMainClientData);
 
-        // Build final source text
+        using var clientTemplateStreamReader = new StreamReader(Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonClientTemplate.py")!);
+
+        var clientTemplate = clientTemplateStreamReader.ReadToEnd();
+
+        var clientData = new
+        {
+            VersioningImports = versioningImportsBuilder,
+            SyncMainClient = syncMainClient,
+            AsyncMainClient = asyncMainClient,
+            ExceptionType = _settings.ExceptionType
+        };
+
+        var client = stubble.Render(clientTemplate, clientData);
+        File.WriteAllText("/home/vincent/Downloads/out/nexus_api/client.py", client);
+
+        // Shared
         using var encoderStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
             .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonEncoder.py")!);
@@ -220,20 +240,18 @@ public class PythonGenerator
 
         using var finalTemplateStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
-            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonTemplate.py")!);
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonSharedTemplate.py")!);
 
-        var finalTemplate = finalTemplateStreamReader.ReadToEnd();
+        var sharedTemplate = finalTemplateStreamReader.ReadToEnd();
 
-        var finalData = new
+        var sharedData = new
         {
-            SyncMainClient = syncMainClient,
-            AsyncMainClient = asyncMainClient,
             Encoder = encoder,
             ExceptionType = _settings.ExceptionType,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        return stubble.Render(finalTemplate, finalData);
+        return stubble.Render(sharedTemplate, sharedData);
     }
 
     private SubClientProperties GenerateClientProperties(

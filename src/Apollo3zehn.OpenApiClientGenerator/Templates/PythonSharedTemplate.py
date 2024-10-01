@@ -1,36 +1,13 @@
-﻿# pyright: reportPrivateUsage=false
-
-# Python <= 3.9
+﻿# Python <= 3.9
 from __future__ import annotations
 
-{{{SyncMainClient}}}
-{{{AsyncMainClient}}}
-{{{Encoder}}}
-
-{{#Special_NexusFeatures}}
-import asyncio
-import base64
-{{/Special_NexusFeatures}}
-import json
-{{#Special_NexusFeatures}}
-import time
-from array import array
-{{/Special_NexusFeatures}}
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-{{#Special_NexusFeatures}}
-from tempfile import NamedTemporaryFile
-{{/Special_NexusFeatures}}
-from typing import (Any, AsyncIterable, Awaitable, Callable, Iterable,
-                    Optional, Type, Union, cast)
-from urllib.parse import quote
-from uuid import UUID
-{{#Special_NexusFeatures}}
-from zipfile import ZipFile
-{{/Special_NexusFeatures}}
+from typing import Any, Type, cast
 
-from httpx import AsyncClient, Client, Request, Response
+from nexus_api.PythonEncoder import (JsonEncoderOptions, to_camel_case,
+                                     to_snake_case)
+
 
 def _to_string(value: Any) -> str:
 
@@ -63,10 +40,6 @@ class {{{ExceptionType}}}(Exception):
 
     message: str
     """The exception message."""
-
-{{{Models}}}
-{{{AsyncSubClientsSource}}}
-{{{SyncSubClientsSource}}}
 
 {{#Special_NexusFeatures}}
 @dataclass(frozen=True)
