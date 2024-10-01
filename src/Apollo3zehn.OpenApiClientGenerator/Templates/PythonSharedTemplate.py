@@ -1,11 +1,19 @@
 ﻿# Python <= 3.9
 from __future__ import annotations
 
+{{#Special_NexusFeatures}}
+import array
+from dataclasses import dataclass
 from datetime import datetime
+{{/Special_NexusFeatures}}
+from datetime import timedelta
 from enum import Enum
 from typing import Any, Type, cast
+{{#Special_NexusFeatures}}
+from typing import Optional
+{{/Special_NexusFeatures}}
 
-from nexus_api.PythonEncoder import (JsonEncoderOptions, to_camel_case,
+from .PythonEncoder import (JsonEncoderOptions, to_camel_case,
                                      to_snake_case)
 
 

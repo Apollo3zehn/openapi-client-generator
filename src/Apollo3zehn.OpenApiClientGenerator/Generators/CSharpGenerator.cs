@@ -44,7 +44,8 @@ public class CSharpGenerator
         foreach (var document in documents)
         {
             // Version
-            var version = document.Info.Version;
+            var version = document.Info.Version
+                .Replace('.', '_');
 
             if (string.IsNullOrWhiteSpace(version))
                 continue;

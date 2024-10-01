@@ -20,9 +20,9 @@ class {{{ClientName}}}{{{Async}}}Client:
     _configuration_header_key: str = "{{{Special_ConfigurationHeaderKey}}}"
 {{/Special_NexusFeatures}}
 {{#Special_AccessTokenSupport}}
-    _authorization_header_key: str = "Authorization"
+    ___authorization_header_key: str = "Authorization"
 
-    _token: Optional[str]
+    ___token: Optional[str]
 {{/Special_AccessTokenSupport}}
     ___http_client: {{{Async}}}Client
 
@@ -51,7 +51,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         self.___http_client = http_client
 {{#Special_AccessTokenSupport}}
-        self._token = None
+        self.___token = None
 {{/Special_AccessTokenSupport}}
 
 {{{VersioningFieldAssignments}}}
@@ -60,26 +60,26 @@ class {{{ClientName}}}{{{Async}}}Client:
     @property
     def is_authenticated(self) -> bool:
         """Gets a value which indicates if the user is authenticated."""
-        return self._token is not None
+        return self.___token is not None
 {{/Special_AccessTokenSupport}}
 
 {{{VersioningProperties}}}
 
 {{#Special_AccessTokenSupport}}
-    def sign_in(self, access_token: str):
+    def sign_in(self, access___token: str):
         """Signs in the user.
 
         Args:
-            access_token: The access token.
+            access___token: The access token.
         """
 
-        authorization_header_value = f"Bearer {access_token}"
+        authorization_header_value = f"Bearer {access___token}"
 
-        if self._authorization_header_key in self.___http_client.headers:
-            del self.___http_client.headers[self._authorization_header_key]
+        if self.___authorization_header_key in self.___http_client.headers:
+            del self.___http_client.headers[self.___authorization_header_key]
 
-        self.___http_client.headers[self._authorization_header_key] = authorization_header_value
-        self._token = access_token
+        self.___http_client.headers[self.___authorization_header_key] = authorization_header_value
+        self.___token = access___token
 {{/Special_AccessTokenSupport}}
 
 {{#Special_NexusFeatures}}

@@ -30,8 +30,14 @@ public class PythonGenerator
         _settings = settings;
     }
 
-    public string Generate(params OpenApiDocument[] documents)
+    public void Generate(
+        out string client,
+        out string shared,
+        out Dictionary<string, string> modules,
+        params OpenApiDocument[] documents)
     {
+        modules = new();
+
         _additionalModels = new();
 
         var sourceTextBuilder = new StringBuilder();
@@ -58,10 +64,11 @@ public class PythonGenerator
         foreach (var document in documents)
         {
             // Version
-            var version = document.Info.Version;
+            var version = document.Info.Version
+                .Replace('.', '_');
 
             if (string.IsNullOrWhiteSpace(version))
-                continue;
+                throw new Exception("Invalid version in OpenApiDocument.");
 
             if (!char.IsLetter(version[0]))
                 version = "V" + version;
@@ -76,10 +83,10 @@ public class PythonGenerator
 
             versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}(self)");
 
-            versioningPropertiesBuilder.AppendLine($"        @property");
-            versioningPropertiesBuilder.AppendLine($"        def {version}(self) -> {version}:");
-            versioningPropertiesBuilder.AppendLine($"            \"\"\"Gets the client for version {version}.\"\"\"");
-            versioningPropertiesBuilder.AppendLine($"            return self._{Shared.FirstCharToLower(version)}");
+            versioningPropertiesBuilder.AppendLine($"    @property");
+            versioningPropertiesBuilder.AppendLine($"    def {version}(self) -> {version}:");
+            versioningPropertiesBuilder.AppendLine($"        \"\"\"Gets the client for version {version}.\"\"\"");
+            versioningPropertiesBuilder.AppendLine($"        return self._{Shared.FirstCharToLower(version)}");
             versioningPropertiesBuilder.AppendLine();
 
             // Sync client
@@ -154,7 +161,7 @@ public class PythonGenerator
             var settings = new RenderSettings() { SkipHtmlEncoding = true };
             var module = stubble.Render(moduleTemplate, moduleData, settings);
 
-            File.WriteAllText($"/home/vincent/Downloads/out/nexus_api/{version}.py", module);
+            modules[version] = module;
         }
 
         // Main clients
@@ -225,11 +232,11 @@ public class PythonGenerator
             VersioningImports = versioningImportsBuilder,
             SyncMainClient = syncMainClient,
             AsyncMainClient = asyncMainClient,
-            ExceptionType = _settings.ExceptionType
+            ExceptionType = _settings.ExceptionType,
+            Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        var client = stubble.Render(clientTemplate, clientData);
-        File.WriteAllText("/home/vincent/Downloads/out/nexus_api/client.py", client);
+        client = stubble.Render(clientTemplate, clientData);
 
         // Shared
         using var encoderStreamReader = new StreamReader(Assembly
@@ -251,7 +258,7 @@ public class PythonGenerator
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        return stubble.Render(sharedTemplate, sharedData);
+        shared = stubble.Render(sharedTemplate, sharedData);
     }
 
     private SubClientProperties GenerateClientProperties(

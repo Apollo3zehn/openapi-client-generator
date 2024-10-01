@@ -58,7 +58,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {{#Special_AccessTokenSupport}}
     private const string AuthorizationHeaderKey = "Authorization";
 
-    private string? _token;
+    private string? ___token;
 {{/Special_AccessTokenSupport}}
     private HttpClient _httpClient;
 
@@ -89,7 +89,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
     /// <summary>
     /// Gets a value which indicates if the user is authenticated.
     /// </summary>
-    public bool IsAuthenticated => _token is not null;
+    public bool IsAuthenticated => ___token is not null;
 {{/Special_AccessTokenSupport}}
 
 {{{VersioningProperties}}}
@@ -102,7 +102,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         _httpClient.DefaultRequestHeaders.Remove(AuthorizationHeaderKey);
         _httpClient.DefaultRequestHeaders.Add(AuthorizationHeaderKey, authorizationHeaderValue);
 
-        _token = accessToken;
+        ___token = accessToken;
     }
 {{/Special_AccessTokenSupport}}
 

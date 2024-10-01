@@ -86,10 +86,22 @@ public class GeneratorTests
         var csharpGenerator = new CSharpGenerator(settings);
         var csharpCode = csharpGenerator.Generate(document_v1, document_v2);
 
+        // generate python client
         var pythonGenerator = new PythonGenerator(settings);
-        var pythonCode = pythonGenerator.Generate(document_v1, document_v2);
 
-        // File.WriteAllText("/home/vincent/Downloads/out/nexus_api/csharp.cs", csharpCode);
-        File.WriteAllText("/home/vincent/Downloads/out/nexus_api/Shared.py", pythonCode);
+        pythonGenerator.Generate(
+            out var pythonClient,
+            out var pythonShared,
+            out var pythonModules,
+            document_v1, document_v2
+        );
+
+        File.WriteAllText("/home/vincent/Downloads/out/nexus_api/Client.py", pythonClient);
+        File.WriteAllText("/home/vincent/Downloads/out/nexus_api/Shared.py", pythonShared);
+
+        foreach (var (version, module) in pythonModules)
+        {
+            File.WriteAllText($"/home/vincent/Downloads/out/nexus_api/{version}.py", module);
+        }
     }
 }
