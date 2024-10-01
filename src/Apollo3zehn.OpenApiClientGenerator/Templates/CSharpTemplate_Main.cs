@@ -17,14 +17,14 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace {{{Namespace}}};
-
+namespace {{{Namespace}}}
+{
 /// <summary>
 /// A client for the {{{ClientName}}} system.
 /// </summary>
 public interface I{{{ClientName}}}Client
 {
-{{{SubClientInterfaceProperties}}}
+{{{VersioningInterfaceProperties}}}
 
 {{#Special_AccessTokenSupport}}
     /// <summary>
@@ -58,11 +58,10 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {{#Special_AccessTokenSupport}}
     private const string AuthorizationHeaderKey = "Authorization";
 
-    private string? _token;
+    private string? ___token;
 {{/Special_AccessTokenSupport}}
     private HttpClient _httpClient;
 
-{{{SubClientFields}}}
     /// <summary>
     /// Initializes a new instance of the <see cref="{{{ClientName}}}Client"/>.
     /// </summary>
@@ -83,17 +82,17 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
         _httpClient = httpClient;
 
-{{{SubClientFieldAssignments}}}
+{{{VersioningPropertyAssignments}}}
     }
 
 {{#Special_AccessTokenSupport}}
     /// <summary>
     /// Gets a value which indicates if the user is authenticated.
     /// </summary>
-    public bool IsAuthenticated => _token is not null;
+    public bool IsAuthenticated => ___token is not null;
 {{/Special_AccessTokenSupport}}
 
-{{{SubClientProperties}}}
+{{{VersioningProperties}}}
 
 {{#Special_AccessTokenSupport}}
     /// <inheritdoc />
@@ -103,7 +102,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         _httpClient.DefaultRequestHeaders.Remove(AuthorizationHeaderKey);
         _httpClient.DefaultRequestHeaders.Add(AuthorizationHeaderKey, authorizationHeaderValue);
 
-        _token = accessToken;
+        ___token = accessToken;
     }
 {{/Special_AccessTokenSupport}}
 
@@ -738,8 +737,6 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {{/Special_NexusFeatures}}
 }
 
-{{{SubClientSource}}}
-
 {{#Special_NexusFeatures}}
 internal class CastMemoryManager<TFrom, TTo> : MemoryManager<TTo>
      where TFrom : struct
@@ -800,8 +797,6 @@ internal class DisposableConfiguration : IDisposable
 }
 {{/Special_NexusFeatures}}
 
-{{{Models}}}
-
 internal static class Utilities
 {
     internal static JsonSerializerOptions JsonOptions { get; }
@@ -836,3 +831,8 @@ public record DataResponse(
     TimeSpan SamplePeriod,
     double[] Values);
 {{/Special_NexusFeatures}}
+}
+
+{{#SubClients}}
+{{.}}
+{{/SubClients}}

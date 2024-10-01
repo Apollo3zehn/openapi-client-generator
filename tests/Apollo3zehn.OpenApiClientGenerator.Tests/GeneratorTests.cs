@@ -21,8 +21,15 @@ public class GeneratorTests
         openApiJsonString = openApiJsonString.Replace("3.1.0", "3.0.3");
         openApiJsonString = openApiJsonString.Replace("\"type\"", "type");
 
-        var document = new OpenApiStringReader()
-            .Read(openApiJsonString, out var diagnostic);
+        var document_v1 = new OpenApiStringReader()
+            .Read(openApiJsonString, out var diagnostic1);
+
+        document_v1.Info.Version = "v1";
+
+        var document_v2 = new OpenApiStringReader()
+            .Read(openApiJsonString, out var diagnostic2);
+
+        document_v2.Info.Version = "v2";
 
         // generate clients
 
@@ -56,8 +63,6 @@ public class GeneratorTests
         var settings = new GeneratorSettings(
             Namespace: "Hsds.Api",
             ClientName: "Hsds",
-            TokenFolderName: default!,
-            ConfigurationHeaderKey: default!,
             ExceptionType: "HsdsException",
             ExceptionCodePrefix: "H",
             GetOperationName: (path, type, _) => {
@@ -66,12 +71,18 @@ public class GeneratorTests
 
                 return $"{type}{methodName}";
             },
+            Special_ConfigurationHeaderKey: default!,
             Special_WebAssemblySupport: false,
             Special_AccessTokenSupport: false,
-            Special_NexusFeatures: false);
+            Special_NexusFeatures: false
+        );
 
         // generate C# client
-        var csharpGenerator = new PythonGenerator(settings);
-        var csharpCode = csharpGenerator.Generate(document);
+        var csharpGenerator = new CSharpGenerator(settings);
+        csharpGenerator.Generate(".", document_v1, document_v2);
+
+        // generate python client
+        var pythonGenerator = new PythonGenerator(settings);
+        pythonGenerator.Generate(".", document_v1, document_v2);
     }
 }

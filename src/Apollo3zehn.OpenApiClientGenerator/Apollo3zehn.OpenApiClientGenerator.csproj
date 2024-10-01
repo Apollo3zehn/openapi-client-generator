@@ -11,7 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Templates\CSharpTemplate.cs" />
+    <Compile Remove="Templates\CSharpTemplate_Main.cs" />
+    <Compile Remove="Templates\CSharpTemplate_Sub.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,11 +4,9 @@ import typing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import (Any, Callable, ClassVar, Optional, Type, Union,
+from typing import (Any, Callable, ClassVar, Optional, Type, TypeVar, Union,
                     cast)
 from uuid import UUID
-
-from typing import TypeVar
 
 T = TypeVar("T")
 

@@ -69,8 +69,6 @@ public static class Program
         var settings = new GeneratorSettings(
             Namespace: "Hsds.Api",
             ClientName: "Hsds",
-            TokenFolderName: default!, /* Apollo3zehn-specific option */
-            ConfigurationHeaderKey: default!, /* Apollo3zehn-specific option */
             ExceptionType: "HsdsException",
             ExceptionCodePrefix: "H",
             GetOperationName: (path, type, _) => {
@@ -79,6 +77,7 @@ public static class Program
 
                 return $"{type}{methodName}";
             },
+            Special_ConfigurationHeaderKey: default!, /* Apollo3zehn-specific option */
             Special_WebAssemblySupport: false, /* Apollo3zehn-specific option */
             Special_AccessTokenSupport: false, /* Apollo3zehn-specific option */
             Special_NexusFeatures: false); /* Apollo3zehn-specific option */

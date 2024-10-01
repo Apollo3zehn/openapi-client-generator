@@ -1,34 +1,18 @@
-﻿# pyright: reportPrivateUsage=false
-
-# Python <= 3.9
-from __future__ import annotations
-
-{{{Encoder}}}
-
-{{#Special_NexusFeatures}}
-import asyncio
-import base64
-{{/Special_NexusFeatures}}
-import json
-{{#Special_NexusFeatures}}
-import time
-from array import array
-{{/Special_NexusFeatures}}
+﻿{{#Special_NexusFeatures}}
+import array
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from enum import Enum
-{{#Special_NexusFeatures}}
-from tempfile import NamedTemporaryFile
+from datetime import timedelta
 {{/Special_NexusFeatures}}
-from typing import (Any, AsyncIterable, Awaitable, Callable, Iterable,
-                    Optional, Type, Union, cast)
-from urllib.parse import quote
-from uuid import UUID
+from datetime import datetime
+from enum import Enum
+from typing import Any, Type, cast
 {{#Special_NexusFeatures}}
-from zipfile import ZipFile
+from typing import Optional
 {{/Special_NexusFeatures}}
 
-from httpx import AsyncClient, Client, Request, Response
+from ._encoder import (JsonEncoderOptions, to_camel_case,
+                                     to_snake_case)
+
 
 def _to_string(value: Any) -> str:
 
@@ -61,10 +45,6 @@ class {{{ExceptionType}}}(Exception):
 
     message: str
     """The exception message."""
-
-{{{Models}}}
-{{{AsyncSubClientsSource}}}
-{{{SyncSubClientsSource}}}
 
 {{#Special_NexusFeatures}}
 @dataclass(frozen=True)
@@ -99,6 +79,3 @@ class DataResponse:
     values: array[float]
     """The data."""
 {{/Special_NexusFeatures}}
-
-{{{AsyncClient}}}
-{{{SyncClient}}}
