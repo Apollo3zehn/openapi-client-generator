@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Stubble.Core.Builders;
+using Stubble.Core.Settings;
 
 namespace Apollo3zehn.OpenApiClientGenerator;
 
@@ -22,134 +23,185 @@ public class CSharpGenerator
         _settings = settings;
     }
 
-    public string Generate(OpenApiDocument document)
+    public string Generate(params OpenApiDocument[] documents)
     {
         _additionalModels = new();
+
         var sourceTextBuilder = new StringBuilder();
         var stubble = new StubbleBuilder().Build();
+        var subClients = new List<object>();
 
-        // add clients
-        var groupedClients = document.Paths
-            .SelectMany(path => path.Value.Operations.First().Value.Tags.Select(tag => (path, tag)))
-            .GroupBy(value => value.tag.Name);
+        using var subClientTemplateStreamReader = new StreamReader(Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.CSharpTemplate_Sub.cs")!);
 
-        var subClients = groupedClients.Select(group => group.Key);
+        var subClientTemplate = subClientTemplateStreamReader.ReadToEnd();
 
-        // SubClientFields
-        sourceTextBuilder.Clear();
+        var versioningInterfacePropertiesBuilder = new StringBuilder();
+        var versioningPropertyAssignmentsBuilder = new StringBuilder();
+        var versioningPropertiesBuilder = new StringBuilder();
 
-        foreach (var subClient in subClients)
+        foreach (var document in documents)
         {
-            sourceTextBuilder.AppendLine($"    private {subClient}Client _{Shared.FirstCharToLower(subClient)};");
+            // Version
+            var version = document.Info.Version;
+
+            if (string.IsNullOrWhiteSpace(version))
+                continue;
+
+            if (!char.IsLetter(version[0]))
+                version = "V" + version;
+
+            if (!char.IsUpper(version[0]))
+                version = Shared.FirstCharToUpper(version);
+
+            // Versioning
+            versioningInterfacePropertiesBuilder.AppendLine("    /// <summary>");
+            versioningInterfacePropertiesBuilder.AppendLine($"    /// Gets the {version} client.");
+            versioningInterfacePropertiesBuilder.AppendLine("    /// </summary>");
+            versioningInterfacePropertiesBuilder.AppendLine($"    {_settings.Namespace}.{version}.I{version} {version} {{ get; }}");
+            versioningInterfacePropertiesBuilder.AppendLine();
+
+            versioningPropertyAssignmentsBuilder.AppendLine($"        {version} = new {_settings.Namespace}.{version}.{version}(this);");
+
+            versioningPropertiesBuilder.AppendLine($"    /// <inheritdoc />");
+            versioningPropertiesBuilder.AppendLine($"    public {_settings.Namespace}.{version}.I{version} {version} {{ get; }}");
+            versioningPropertiesBuilder.AppendLine();
+
+            // Add clients
+            var groupedClients = document.Paths
+                .SelectMany(path => path.Value.Operations.First().Value.Tags.Select(tag => (path, tag)))
+                .GroupBy(value => value.tag.Name);
+
+            var subClientNames = groupedClients.Select(group => group.Key);
+
+            // SubClientInterfaceProperties
+            sourceTextBuilder.Clear();
+
+            foreach (var subClientName in subClientNames)
+            {
+                sourceTextBuilder.AppendLine("    /// <summary>");
+                sourceTextBuilder.AppendLine($@"    /// Gets the <see cref=""I{subClientName}Client""/>.");
+                sourceTextBuilder.AppendLine("    /// </summary>");
+                sourceTextBuilder.AppendLine($"    I{subClientName}Client {subClientName} {{ get; }}");
+                sourceTextBuilder.AppendLine();
+            }
+
+            var subClientInterfaceProperties = sourceTextBuilder.ToString();
+
+            // SubClientPropertyAssignments
+            sourceTextBuilder.Clear();
+
+            foreach (var subClientName in subClientNames)
+            {
+                sourceTextBuilder.AppendLine($"        {subClientName} = new {subClientName}Client(client);");
+            }
+
+            var subClientPropertyAssignments = sourceTextBuilder.ToString();
+
+            // SubClientProperties
+            sourceTextBuilder.Clear();
+
+            foreach (var subClientName in subClientNames)
+            {
+                sourceTextBuilder.AppendLine("    /// <inheritdoc />");
+                sourceTextBuilder.AppendLine($"    public I{subClientName}Client {subClientName} {{ get; }}");
+                sourceTextBuilder.AppendLine();
+            }
+
+            var subClientProperties = sourceTextBuilder.ToString();
+
+            // SubClientSource
+            sourceTextBuilder.Clear();
+
+            foreach (var clientGroup in groupedClients)
+            {
+                AppendSubClientSourceText(
+                    _settings.ClientName,
+                    clientGroup.Key,
+                    clientGroup.ToDictionary(entry => entry.path.Key, entry => entry.path.Value),
+                    sourceTextBuilder);
+
+                sourceTextBuilder.AppendLine();
+            }
+
+            var subClientSource = sourceTextBuilder.ToString();
+
+            // Models
+            sourceTextBuilder.Clear();
+
+            foreach (var schema in document.Components.Schemas)
+            {
+                AppendModelSourceText(
+                    schema.Key,
+                    schema.Value,
+                    sourceTextBuilder);
+
+                sourceTextBuilder.AppendLine();
+            }
+
+            foreach (var (_, modelText) in _additionalModels)
+            {
+                sourceTextBuilder.Append(modelText);
+                sourceTextBuilder.AppendLine();
+            }
+
+            var models = sourceTextBuilder.ToString();
+
+            var subData = new
+            {
+                Namespace = $"{_settings.Namespace}.{version}",
+                ClientName = _settings.ClientName,
+                Version = version,
+                SubClientInterfaceProperties = subClientInterfaceProperties,
+                SubClientPropertyAssignments = subClientPropertyAssignments,
+                SubClientProperties = subClientProperties,
+                SubClientSource = subClientSource,
+                Models = models,
+                ExceptionType = _settings.ExceptionType,
+                ExceptionCodePrefix = _settings.ExceptionCodePrefix
+            };
+
+            var subClient = stubble.Render(
+                subClientTemplate, 
+                subData
+            );
+
+            subClients.Add(subClient);
         }
-
-        var subClientFields = sourceTextBuilder.ToString();
-
-        // SubClientFieldAssignments
-        sourceTextBuilder.Clear();
-
-        foreach (var subClient in subClients)
-        {
-            sourceTextBuilder.AppendLine($"        _{Shared.FirstCharToLower(subClient)} = new {subClient}Client(this);");
-        }
-
-        var subClientFieldAssignments = sourceTextBuilder.ToString();
-
-        // SubClientProperties
-        sourceTextBuilder.Clear();
-
-        foreach (var subClient in subClients)
-        {
-            sourceTextBuilder.AppendLine("    /// <inheritdoc />");
-            sourceTextBuilder.AppendLine($"    public I{subClient}Client {subClient} => _{Shared.FirstCharToLower(subClient)};");
-            sourceTextBuilder.AppendLine();
-        }
-
-        var subClientProperties = sourceTextBuilder.ToString();
-
-        // SubClientInterfaceProperties
-        sourceTextBuilder.Clear();
-
-        foreach (var subClient in subClients)
-        {
-            sourceTextBuilder.AppendLine(
-$@"    /// <summary>
-    /// Gets the <see cref=""I{subClient}Client""/>.
-    /// </summary>");
-            sourceTextBuilder.AppendLine($"    I{subClient}Client {subClient} {{ get; }}");
-            sourceTextBuilder.AppendLine();
-        }
-
-        var subClientInterfaceProperties = sourceTextBuilder.ToString();
-
-        // SubClientSource
-        sourceTextBuilder.Clear();
-
-        foreach (var clientGroup in groupedClients)
-        {
-            AppendSubClientSourceText(
-                clientGroup.Key,
-                clientGroup.ToDictionary(entry => entry.path.Key, entry => entry.path.Value),
-                sourceTextBuilder);
-
-            sourceTextBuilder.AppendLine();
-        }
-
-        var subClientSource = sourceTextBuilder.ToString();
-
-        // Models
-        sourceTextBuilder.Clear();
-
-        foreach (var schema in document.Components.Schemas)
-        {
-            AppendModelSourceText(
-                schema.Key,
-                schema.Value,
-                sourceTextBuilder);
-
-            sourceTextBuilder.AppendLine();
-        }
-
-        foreach (var (_, modelText) in _additionalModels)
-        {
-            sourceTextBuilder.Append(modelText);
-            sourceTextBuilder.AppendLine();
-        }
-
-        var models = sourceTextBuilder.ToString();
 
         // Build final source text
         var basePath = Assembly.GetExecutingAssembly().Location;
 
-        using var templateStreamReader = new StreamReader(Assembly
+        using var mainClientTemplateStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
-            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.CSharpTemplate.cs")!);
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.CSharpTemplate_Main.cs")!);
 
-        var template = templateStreamReader.ReadToEnd();
+        var mainClientTemplate = mainClientTemplateStreamReader.ReadToEnd();
 
-        var data = new
+        var mainClientData = new
         {
             Namespace = _settings.Namespace,
             ClientName = _settings.ClientName,
-            TokenFoldername = _settings.TokenFolderName,
-            ConfigurationHeaderKey = _settings.ConfigurationHeaderKey,
-            SubClientFields = subClientFields,
-            SubClientFieldAssignments = subClientFieldAssignments,
-            SubClientProperties = subClientProperties,
-            SubClientInterfaceProperties = subClientInterfaceProperties,
-            SubClientSource = subClientSource,
+            VersioningInterfaceProperties = versioningInterfacePropertiesBuilder,
+            VersioningPropertyAssignments = versioningPropertyAssignmentsBuilder,
+            VersioningProperties = versioningPropertiesBuilder,
             ExceptionType = _settings.ExceptionType,
-            ExceptionCodePrefix = _settings.ExceptionCodePrefix,
-            Models = models,
+            SubClients = subClients,
             Special_WebAssemblySupport = _settings.Special_WebAssemblySupport,
             Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        return stubble.Render(template, data);
+        return stubble.Render(
+            mainClientTemplate, 
+            mainClientData, 
+            new RenderSettings() { SkipHtmlEncoding = true }
+        );
     }
 
     private void AppendSubClientSourceText(
+        string clientName,
         string className,
         IDictionary<string, OpenApiPathItem> methodMap,
         StringBuilder sourceTextBuilder)
@@ -249,9 +301,9 @@ public interface I{augmentedClassName}
         sourceTextBuilder.AppendLine(
 $@"public class {augmentedClassName} : I{augmentedClassName}
 {{
-    private {_settings.ClientName}Client ___client;
+    private {clientName}Client ___client;
     
-    internal {augmentedClassName}({_settings.ClientName}Client client)
+    internal {augmentedClassName}({clientName}Client client)
     {{
         ___client = client;
     }}

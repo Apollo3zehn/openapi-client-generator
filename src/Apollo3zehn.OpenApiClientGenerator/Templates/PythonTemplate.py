@@ -3,6 +3,8 @@
 # Python <= 3.9
 from __future__ import annotations
 
+{{{SyncMainClient}}}
+{{{AsyncMainClient}}}
 {{{Encoder}}}
 
 {{#Special_NexusFeatures}}
@@ -99,6 +101,3 @@ class DataResponse:
     values: array[float]
     """The data."""
 {{/Special_NexusFeatures}}
-
-{{{AsyncClient}}}
-{{{SyncClient}}}

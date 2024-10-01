@@ -17,16 +17,16 @@ class {{{ClientName}}}{{{Async}}}Client:
     """A client for the {{{ClientName}}} system."""
     
 {{#Special_NexusFeatures}}
-    _configuration_header_key: str = "{{{ConfigurationHeaderKey}}}"
+    _configuration_header_key: str = "{{{Special_ConfigurationHeaderKey}}}"
 {{/Special_NexusFeatures}}
 {{#Special_AccessTokenSupport}}
     _authorization_header_key: str = "Authorization"
 
     _token: Optional[str]
 {{/Special_AccessTokenSupport}}
-    _http_client: {{{Async}}}Client
+    ___http_client: {{{Async}}}Client
 
-{{{SubClientFields}}}
+{{{VersioningFields}}}
 
     @classmethod
     def create(cls, base_url: str) -> {{{ClientName}}}{{{Async}}}Client:
@@ -49,12 +49,12 @@ class {{{ClientName}}}{{{Async}}}Client:
         if http_client.base_url is None:
             raise Exception("The base url of the HTTP client must be set.")
 
-        self._http_client = http_client
+        self.___http_client = http_client
 {{#Special_AccessTokenSupport}}
         self._token = None
 {{/Special_AccessTokenSupport}}
 
-{{{SubClientFieldAssignments}}}
+{{{VersioningFieldAssignments}}}
 
 {{#Special_AccessTokenSupport}}
     @property
@@ -63,7 +63,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         return self._token is not None
 {{/Special_AccessTokenSupport}}
 
-{{{SubClientProperties}}}
+{{{VersioningProperties}}}
 
 {{#Special_AccessTokenSupport}}
     def sign_in(self, access_token: str):
@@ -75,10 +75,10 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         authorization_header_value = f"Bearer {access_token}"
 
-        if self._authorization_header_key in self._http_client.headers:
-            del self._http_client.headers[self._authorization_header_key]
+        if self._authorization_header_key in self.___http_client.headers:
+            del self.___http_client.headers[self._authorization_header_key]
 
-        self._http_client.headers[self._authorization_header_key] = authorization_header_value
+        self.___http_client.headers[self._authorization_header_key] = authorization_header_value
         self._token = access_token
 {{/Special_AccessTokenSupport}}
 
@@ -92,18 +92,18 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         encoded_json = base64.b64encode(json.dumps(configuration).encode("utf-8")).decode("utf-8")
 
-        if self._configuration_header_key in self._http_client.headers:
-            del self._http_client.headers[self._configuration_header_key]
+        if self._configuration_header_key in self.___http_client.headers:
+            del self.___http_client.headers[self._configuration_header_key]
 
-        self._http_client.headers[self._configuration_header_key] = encoded_json
+        self.___http_client.headers[self._configuration_header_key] = encoded_json
 
         return _Disposable{{{Async}}}Configuration(self)
 
     def clear_configuration(self) -> None:
         """Clears configuration data for all subsequent API requests."""
 
-        if self._configuration_header_key in self._http_client.headers:
-            del self._http_client.headers[self._configuration_header_key]
+        if self._configuration_header_key in self.___http_client.headers:
+            del self.___http_client.headers[self._configuration_header_key]
 {{/Special_NexusFeatures}}
 
     {{{Def}}} _invoke(self, typeOfT: Optional[Type[T]], method: str, relative_url: str, accept_header_value: Optional[str], content_type_value: Optional[str], content: Union[None, str, bytes, Iterable[bytes], AsyncIterable[bytes]]) -> T:
@@ -112,7 +112,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         request = self._build_request_message(method, relative_url, content, content_type_value, accept_header_value)
 
         # send request
-        response = {{{Await}}}self._http_client.send(request)
+        response = {{{Await}}}self.___http_client.send(request)
 
         # process response
         if not response.is_success:
@@ -150,7 +150,7 @@ class {{{ClientName}}}{{{Async}}}Client:
     
     def _build_request_message(self, method: str, relative_url: str, content: Any, content_type_value: Optional[str], accept_header_value: Optional[str]) -> Request:
        
-        request_message = self._http_client.build_request(method, relative_url, content = content)
+        request_message = self.___http_client.build_request(method, relative_url, content = content)
 
         if content_type_value is not None:
             request_message.headers["Content-Type"] = content_type_value
@@ -165,8 +165,8 @@ class {{{ClientName}}}{{{Async}}}Client:
         return self
 
     {{{Def}}} __{{{Exit}}}__(self, exc_type, exc_value, exc_traceback):
-        if (self._http_client is not None):
-            {{{Await}}}self._http_client.{{{Aclose}}}()
+        if (self.___http_client is not None):
+            {{{Await}}}self.___http_client.{{{Aclose}}}()
 
 {{#Special_NexusFeatures}}
     {{{Def}}} load(

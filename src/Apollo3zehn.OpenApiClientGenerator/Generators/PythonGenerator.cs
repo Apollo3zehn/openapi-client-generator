@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Stubble.Core.Builders;
+using Stubble.Core.Settings;
 
 namespace Apollo3zehn.OpenApiClientGenerator;
 
@@ -29,60 +30,144 @@ public class PythonGenerator
         _settings = settings;
     }
 
-    public string Generate(OpenApiDocument document)
+    public string Generate(params OpenApiDocument[] documents)
     {
         _additionalModels = new();
+
         var sourceTextBuilder = new StringBuilder();
         var stubble = new StubbleBuilder().Build();
 
-        using var clientTemplateStreamReader = new StreamReader(Assembly
+        using var subClientTemplateStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
-            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonClientTemplate.py")!);
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonClientTemplate_Sub.py")!);
 
-        var clientTemplate = clientTemplateStreamReader.ReadToEnd();
+        var subClientTemplate = subClientTemplateStreamReader.ReadToEnd();
 
-        // Build async client
-        var asyncClients = GenerateClients(document, sourceTextBuilder, async: true);
+        using var moduleTemplateStreamReader = new StreamReader(Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonClientTemplate_Module.py")!);
 
-        var data = new
+        var moduleTemplate = moduleTemplateStreamReader.ReadToEnd();
+
+        var versioningFieldsBuilder = new StringBuilder();
+        var versioningFieldAssignmentsBuilder = new StringBuilder();
+        var versioningPropertiesBuilder = new StringBuilder();
+
+        // Clients
+        foreach (var document in documents)
+        {
+            // Version
+            var version = document.Info.Version;
+
+            if (string.IsNullOrWhiteSpace(version))
+                continue;
+
+            if (!char.IsLetter(version[0]))
+                version = "V" + version;
+
+            if (!char.IsUpper(version[0]))
+                version = Shared.FirstCharToUpper(version);
+
+            // Versioning
+            versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}");
+
+            versioningFieldAssignmentsBuilder.AppendLine($"        _{Shared.FirstCharToLower(version)} = {version}(self)");
+
+            versioningPropertiesBuilder.AppendLine($"        @property");
+            versioningPropertiesBuilder.AppendLine($"        def {version}(self) -> {version}:");
+            versioningPropertiesBuilder.AppendLine($"            \"\"\"Gets the client for version {version}.\"\"\"");
+            versioningPropertiesBuilder.AppendLine($"            return self._{Shared.FirstCharToLower(version)}");
+            versioningPropertiesBuilder.AppendLine();
+
+            // Sync client
+            var syncClientProperties = GenerateClientProperties(
+                _settings.ClientName,
+                document, 
+                sourceTextBuilder, 
+                async: false
+            );
+
+            var syncClientData = new
+            {
+                ClientName = _settings.ClientName,
+                Version = version,
+                SubClientFields = syncClientProperties.Fields,
+                SubClientFieldAssignments = syncClientProperties.FieldAssignments,
+                SubClientProperties = syncClientProperties.Properties
+            };
+
+            var syncClient = stubble.Render(subClientTemplate, syncClientData);
+
+            // Async client
+            var asyncClientProperties = GenerateClientProperties(
+                _settings.ClientName,
+                document, 
+                sourceTextBuilder, 
+                async: true
+            );
+
+            var asyncClientData = new
+            {
+                ClientName = _settings.ClientName,
+                Version = version,
+                SubClientFields = asyncClientProperties.Fields,
+                SubClientFieldAssignments = asyncClientProperties.FieldAssignments,
+                SubClientProperties = asyncClientProperties.Properties
+            };
+
+            var asyncClient = stubble.Render(subClientTemplate, asyncClientData);
+
+            // Models
+            sourceTextBuilder.Clear();
+
+            foreach (var schema in document.Components.Schemas)
+            {
+                AppendModelSourceText(
+                    schema.Key,
+                    schema.Value,
+                    sourceTextBuilder);
+
+                sourceTextBuilder.AppendLine();
+            }
+
+            foreach (var (_, modelText) in _additionalModels)
+            {
+                sourceTextBuilder.Append(modelText);
+                sourceTextBuilder.AppendLine();
+            }
+
+            var models = sourceTextBuilder.ToString();
+
+            var moduleData = new
+            {
+                ClientName = _settings.ClientName,
+                SyncClient = syncClient,
+                SyncSubClients = syncClientProperties.Source,
+                AsyncClient = asyncClient,
+                AsyncSubClients = asyncClientProperties.Source,
+                Models = models
+            };
+
+            var settings = new RenderSettings() { SkipHtmlEncoding = true };
+            var module = stubble.Render(moduleTemplate, moduleData, settings);
+
+            File.WriteAllText($"/home/vincent/Downloads/out/{version}.py", module);
+        }
+
+        // Main clients
+        using var mainClientTemplateStreamReader = new StreamReader(Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonClientTemplate_Main.py")!);
+
+        var mainClientTemplate = mainClientTemplateStreamReader.ReadToEnd();
+
+        /* Sync client */
+        var syncMainClientData = new
         {
             ClientName = _settings.ClientName,
-            TokenFoldername = _settings.TokenFolderName,
-            ConfigurationHeaderKey = _settings.ConfigurationHeaderKey,
-            SubClientFields = asyncClients.Fields,
-            SubClientFieldAssignments = asyncClients.FieldAssignments,
-            SubClientProperties = asyncClients.Properties,
-            ExceptionType = _settings.ExceptionType,
-            ExceptionCodePrefix = _settings.ExceptionCodePrefix,
-            Async = "Async",
-            Def = "async def",
-            Await = "await ",
-            Aclose = "aclose",
-            Aiter_bytes = "aiter_bytes",
-            AsyncioSleep = "asyncio.sleep",
-            Enter = "aenter",
-            Exit = "aexit",
-            Read = "aread",
-            For = "async for",
-            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
-            Special_NexusFeatures = _settings.Special_NexusFeatures
-        };
-
-        var asyncClient = stubble.Render(clientTemplate, data);
-
-        // Build sync client
-        var syncClients = GenerateClients(document, sourceTextBuilder, async: false);
-
-        var data2 = new
-        {
-            ClientName = _settings.ClientName,
-            TokenFoldername = _settings.TokenFolderName,
-            ConfigurationHeaderKey = _settings.ConfigurationHeaderKey,
-            SubClientFields = syncClients.Fields,
-            SubClientFieldAssignments = syncClients.FieldAssignments,
-            SubClientProperties = syncClients.Properties,
-            ExceptionType = _settings.ExceptionType,
-            ExceptionCodePrefix = _settings.ExceptionCodePrefix,
+            VersioningFields = versioningFieldsBuilder,
+            VersioningFieldAssignments = versioningFieldAssignmentsBuilder,
+            VersioningProperties = versioningPropertiesBuilder,
             Async = "",
             Def = "def",
             Await = "",
@@ -93,35 +178,40 @@ public class PythonGenerator
             Exit = "exit",
             Read = "read",
             For = "for",
+            ExceptionType = _settings.ExceptionType,
+            ExceptionCodePrefix = _settings.ExceptionCodePrefix,
             Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        var syncClient = stubble.Render(clientTemplate, data2);
+        var syncMainClient = stubble.Render(mainClientTemplate, syncMainClientData);
 
-        // Models
-        sourceTextBuilder.Clear();
-
-        foreach (var schema in document.Components.Schemas)
+        /* Async client */
+        var asyncMainClientData = new
         {
-            AppendModelSourceText(
-                schema.Key,
-                schema.Value,
-                sourceTextBuilder);
+            ClientName = _settings.ClientName,
+            VersioningFields = versioningFieldsBuilder,
+            VersioningFieldAssignments = versioningFieldAssignmentsBuilder,
+            VersioningProperties = versioningPropertiesBuilder,
+            Async = "Async",
+            Def = "async def",
+            Await = "await ",
+            Aclose = "aclose",
+            Aiter_bytes = "aiter_bytes",
+            AsyncioSleep = "asyncio.sleep",
+            Enter = "aenter",
+            Exit = "aexit",
+            Read = "aread",
+            For = "async for",
+            ExceptionType = _settings.ExceptionType,
+            ExceptionCodePrefix = _settings.ExceptionCodePrefix,
+            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
+            Special_NexusFeatures = _settings.Special_NexusFeatures
+        };
 
-            sourceTextBuilder.AppendLine();
-        }
-
-        foreach (var (_, modelText) in _additionalModels)
-        {
-            sourceTextBuilder.Append(modelText);
-            sourceTextBuilder.AppendLine();
-        }
-
-        var models = sourceTextBuilder.ToString();
+        var asyncMainClient = stubble.Render(mainClientTemplate, asyncMainClientData);
 
         // Build final source text
-
         using var encoderStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
             .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonEncoder.py")!);
@@ -134,37 +224,38 @@ public class PythonGenerator
 
         var finalTemplate = finalTemplateStreamReader.ReadToEnd();
 
-        var data3 = new
+        var finalData = new
         {
+            SyncMainClient = syncMainClient,
+            AsyncMainClient = asyncMainClient,
             Encoder = encoder,
-            AsyncSubClientsSource = asyncClients.Source,
-            SyncSubClientsSource = syncClients.Source,
             ExceptionType = _settings.ExceptionType,
-            Models = models,
-            AsyncClient = asyncClient,
-            SyncClient = syncClient,
-            Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        return stubble.Render(finalTemplate, data3);
+        return stubble.Render(finalTemplate, finalData);
     }
 
-    private SubClientProperties GenerateClients(OpenApiDocument document, StringBuilder sourceTextBuilder, bool async)
+    private SubClientProperties GenerateClientProperties(
+        string clientName,
+        OpenApiDocument document, 
+        StringBuilder sourceTextBuilder, 
+        bool async
+    )
     {
         var prefix = async ? "Async" : "";
 
-        // add clients
+        // Add clients
         var groupedClients = document.Paths
             .SelectMany(path => path.Value.Operations.First().Value.Tags.Select(tag => (path, tag)))
             .GroupBy(value => value.tag.Name);
 
-        var subClients = groupedClients.Select(group => group.Key);
+        var subClientNames = groupedClients.Select(group => group.Key);
 
         // Fields
         sourceTextBuilder.Clear();
 
-        foreach (var subClient in subClients)
+        foreach (var subClient in subClientNames)
         {
             sourceTextBuilder.AppendLine($"    _{Shared.FirstCharToLower(subClient)}: {subClient}{prefix}Client");
         }
@@ -174,9 +265,9 @@ public class PythonGenerator
         // FieldAssignments
         sourceTextBuilder.Clear();
 
-        foreach (var subClient in subClients)
+        foreach (var subClient in subClientNames)
         {
-            sourceTextBuilder.AppendLine($"        self._{Shared.FirstCharToLower(subClient)} = {subClient}{prefix}Client(self)");
+            sourceTextBuilder.AppendLine($"        self._{Shared.FirstCharToLower(subClient)} = {subClient}{prefix}Client(client)");
         }
 
         var fieldAssignments = sourceTextBuilder.ToString();
@@ -184,7 +275,7 @@ public class PythonGenerator
         // Properties
         sourceTextBuilder.Clear();
 
-        foreach (var subClient in subClients)
+        foreach (var subClient in subClientNames)
         {
             sourceTextBuilder.AppendLine(
 $@"    @property
@@ -205,6 +296,7 @@ $@"    @property
         foreach (var clientGroup in groupedClients)
         {
             AppendSubClientSourceText(
+                clientName,
                 clientGroup.Key,
                 clientGroup.ToDictionary(entry => entry.path.Key, entry => entry.path.Value),
                 sourceTextBuilder,
@@ -226,6 +318,7 @@ $@"    @property
     }
 
     private void AppendSubClientSourceText(
+        string clientName,
         string className,
         IDictionary<string, OpenApiPathItem> methodMap,
         StringBuilder sourceTextBuilder,
@@ -242,9 +335,9 @@ $@"    @property
 $@"class {augmentedClassName}:
     """"""Provides methods to interact with {Shared.SplitCamelCase(className).ToLower()}.""""""
 
-    ___client: {_settings.ClientName}{prefix}Client
+    ___client: {clientName}{prefix}Client
     
-    def __init__(self, client: {_settings.ClientName}{prefix}Client):
+    def __init__(self, client: {clientName}{prefix}Client):
         self.___client = client
 ");
 

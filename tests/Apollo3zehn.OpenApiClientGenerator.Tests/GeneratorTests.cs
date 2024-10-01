@@ -11,18 +11,30 @@ public class GeneratorTests
     {
         // read open API document
         var client = new HttpClient();
-        var response = await client.GetAsync("https://raw.githubusercontent.com/HDFGroup/hdf-rest-api/master/openapi.yaml");
+        var response = await client.GetAsync("http://localhost:5000/openapi/v1/openapi.json");
+        var response2 = await client.GetAsync("http://localhost:5000/openapi/v2/openapi.json");
 
         response.EnsureSuccessStatusCode();
 
         var openApiJsonString = await response.Content.ReadAsStringAsync();
+        var openApiJsonString2 = await response2.Content.ReadAsStringAsync();
 
         // TODO: workaround
         openApiJsonString = openApiJsonString.Replace("3.1.0", "3.0.3");
         openApiJsonString = openApiJsonString.Replace("\"type\"", "type");
 
-        var document = new OpenApiStringReader()
-            .Read(openApiJsonString, out var diagnostic);
+        openApiJsonString2 = openApiJsonString2.Replace("3.1.0", "3.0.3");
+        openApiJsonString2 = openApiJsonString2.Replace("\"type\"", "type");
+
+        var document_v1 = new OpenApiStringReader()
+            .Read(openApiJsonString, out var diagnostic1);
+
+        // document_v1.Info.Version = "v1";
+
+        var document_v2 = new OpenApiStringReader()
+            .Read(openApiJsonString2, out var diagnostic2);
+
+        // document_v2.Info.Version = "v2";
 
         // generate clients
 
@@ -54,24 +66,30 @@ public class GeneratorTests
         };
 
         var settings = new GeneratorSettings(
-            Namespace: "Hsds.Api",
-            ClientName: "Hsds",
-            TokenFolderName: default!,
-            ConfigurationHeaderKey: default!,
-            ExceptionType: "HsdsException",
-            ExceptionCodePrefix: "H",
-            GetOperationName: (path, type, _) => {
-                if (!pathToMethodNameMap.TryGetValue($"{type}:{path}", out var methodName))
-                    methodName = pathToMethodNameMap[path];
+            Namespace: "Nexus.Api",
+            ClientName: "Nexus",
+            Special_ConfigurationHeaderKey: default!,
+            ExceptionType: "NexusException",
+            ExceptionCodePrefix: "N",
+            // GetOperationName: (path, type, _) => {
+            //     if (!pathToMethodNameMap.TryGetValue($"{type}:{path}", out var methodName))
+            //         methodName = pathToMethodNameMap[path];
 
-                return $"{type}{methodName}";
-            },
+            //     return $"{type}{methodName}";
+            // },
+            GetOperationName: (path, type, operation) => operation.OperationId.Split(['_'], 2)[1],
             Special_WebAssemblySupport: false,
             Special_AccessTokenSupport: false,
             Special_NexusFeatures: false);
 
         // generate C# client
-        var csharpGenerator = new PythonGenerator(settings);
-        var csharpCode = csharpGenerator.Generate(document);
+        var csharpGenerator = new CSharpGenerator(settings);
+        var csharpCode = csharpGenerator.Generate(document_v1, document_v2);
+
+        var pythonGenerator = new PythonGenerator(settings);
+        var pythonCode = pythonGenerator.Generate(document_v1, document_v2);
+
+        File.WriteAllText("/home/vincent/Downloads/out/csharp.cs", csharpCode);
+        File.WriteAllText("/home/vincent/Downloads/out/python.py", pythonCode);
     }
 }
