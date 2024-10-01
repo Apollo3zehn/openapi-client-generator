@@ -1,19 +1,16 @@
-﻿# Python <= 3.9
-from __future__ import annotations
-
-{{#Special_NexusFeatures}}
+﻿{{#Special_NexusFeatures}}
 import array
 from dataclasses import dataclass
-from datetime import datetime
-{{/Special_NexusFeatures}}
 from datetime import timedelta
+{{/Special_NexusFeatures}}
+from datetime import datetime
 from enum import Enum
 from typing import Any, Type, cast
 {{#Special_NexusFeatures}}
 from typing import Optional
 {{/Special_NexusFeatures}}
 
-from .PythonEncoder import (JsonEncoderOptions, to_camel_case,
+from ._encoder import (JsonEncoderOptions, to_camel_case,
                                      to_snake_case)
 
 

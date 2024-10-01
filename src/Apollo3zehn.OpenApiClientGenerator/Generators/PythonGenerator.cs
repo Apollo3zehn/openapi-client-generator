@@ -31,12 +31,10 @@ public class PythonGenerator
     }
 
     public void Generate(
-        out string client,
-        out string shared,
-        out Dictionary<string, string> modules,
+        string targetFolderPath,
         params OpenApiDocument[] documents)
     {
-        modules = new();
+        var modules = new Dictionary<string, string>();
 
         _additionalModels = new();
 
@@ -77,14 +75,14 @@ public class PythonGenerator
                 version = Shared.FirstCharToUpper(version);
 
             // Versioning
-            versioningImportsBuilder.AppendLine($"from {version} import {version}");
+            versioningImportsBuilder.AppendLine($"from {version} import {version}, {version}Async");
 
-            versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}");
+            versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}{{{{AsyncPlaceholder}}}}");
 
-            versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}(self)");
+            versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}{{{{AsyncPlaceholder}}}}(self)");
 
             versioningPropertiesBuilder.AppendLine($"    @property");
-            versioningPropertiesBuilder.AppendLine($"    def {version}(self) -> {version}:");
+            versioningPropertiesBuilder.AppendLine($"    def {Shared.FirstCharToLower(version)}(self) -> {version}{{{{AsyncPlaceholder}}}}:");
             versioningPropertiesBuilder.AppendLine($"        \"\"\"Gets the client for version {version}.\"\"\"");
             versioningPropertiesBuilder.AppendLine($"        return self._{Shared.FirstCharToLower(version)}");
             versioningPropertiesBuilder.AppendLine();
@@ -100,6 +98,7 @@ public class PythonGenerator
             var syncClientData = new
             {
                 ClientName = _settings.ClientName,
+                Async = "",
                 Version = version,
                 SubClientFields = syncClientProperties.Fields,
                 SubClientFieldAssignments = syncClientProperties.FieldAssignments,
@@ -119,6 +118,7 @@ public class PythonGenerator
             var asyncClientData = new
             {
                 ClientName = _settings.ClientName,
+                Async = "Async",
                 Version = version,
                 SubClientFields = asyncClientProperties.Fields,
                 SubClientFieldAssignments = asyncClientProperties.FieldAssignments,
@@ -175,9 +175,9 @@ public class PythonGenerator
         var syncMainClientData = new
         {
             ClientName = _settings.ClientName,
-            VersioningFields = versioningFieldsBuilder,
-            VersioningFieldAssignments = versioningFieldAssignmentsBuilder,
-            VersioningProperties = versioningPropertiesBuilder,
+            VersioningFields = versioningFieldsBuilder.ToString().Replace("{{AsyncPlaceholder}}", string.Empty),
+            VersioningFieldAssignments = versioningFieldAssignmentsBuilder.ToString().Replace("{{AsyncPlaceholder}}", string.Empty),
+            VersioningProperties = versioningPropertiesBuilder.ToString().Replace("{{AsyncPlaceholder}}", string.Empty),
             Async = "",
             Def = "def",
             Await = "",
@@ -200,9 +200,9 @@ public class PythonGenerator
         var asyncMainClientData = new
         {
             ClientName = _settings.ClientName,
-            VersioningFields = versioningFieldsBuilder,
-            VersioningFieldAssignments = versioningFieldAssignmentsBuilder,
-            VersioningProperties = versioningPropertiesBuilder,
+            VersioningFields = versioningFieldsBuilder.ToString().Replace("{{AsyncPlaceholder}}", "Async"),
+            VersioningFieldAssignments = versioningFieldAssignmentsBuilder.ToString().Replace("{{AsyncPlaceholder}}", "Async"),
+            VersioningProperties = versioningPropertiesBuilder.ToString().Replace("{{AsyncPlaceholder}}", "Async"),
             Async = "Async",
             Def = "async def",
             Await = "await ",
@@ -236,29 +236,49 @@ public class PythonGenerator
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        client = stubble.Render(clientTemplate, clientData);
+        var client = stubble.Render(clientTemplate, clientData);
 
-        // Shared
+        // Encoder
         using var encoderStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
             .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonEncoder.py")!);
 
         var encoder = encoderStreamReader.ReadToEnd();
 
-        using var finalTemplateStreamReader = new StreamReader(Assembly
+        // Shared
+        using var sharedTemplateStreamReader = new StreamReader(Assembly
             .GetExecutingAssembly()
             .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonSharedTemplate.py")!);
 
-        var sharedTemplate = finalTemplateStreamReader.ReadToEnd();
+        var sharedTemplate = sharedTemplateStreamReader.ReadToEnd();
 
         var sharedData = new
         {
-            Encoder = encoder,
             ExceptionType = _settings.ExceptionType,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        shared = stubble.Render(sharedTemplate, sharedData);
+        var shared = stubble.Render(sharedTemplate, sharedData);
+
+        // __init__.py
+        using var initStreamReader = new StreamReader(Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceStream("Apollo3zehn.OpenApiClientGenerator.Templates.PythonInit.py")!);
+
+        var init = initStreamReader.ReadToEnd();
+
+        // Write
+        Directory.CreateDirectory(targetFolderPath);
+
+        File.WriteAllText(Path.Combine(targetFolderPath, "__init__.py"), init);
+        File.WriteAllText(Path.Combine(targetFolderPath, "_client.py"), client);
+        File.WriteAllText(Path.Combine(targetFolderPath, "_encoder.py"), encoder);
+        File.WriteAllText(Path.Combine(targetFolderPath, "_shared.py"), shared);
+
+        foreach (var (version, module) in modules)
+        {
+            File.WriteAllText(Path.Combine(targetFolderPath, $"{version}.py"), module);
+        }
     }
 
     private SubClientProperties GenerateClientProperties(

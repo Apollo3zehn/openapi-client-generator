@@ -17,7 +17,7 @@ class {{{ClientName}}}{{{Async}}}Client:
     """A client for the {{{ClientName}}} system."""
     
 {{#Special_NexusFeatures}}
-    _configuration_header_key: str = "{{{Special_ConfigurationHeaderKey}}}"
+    ___configuration_header_key: str = "{{{Special_ConfigurationHeaderKey}}}"
 {{/Special_NexusFeatures}}
 {{#Special_AccessTokenSupport}}
     ___authorization_header_key: str = "Authorization"
@@ -92,18 +92,18 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         encoded_json = base64.b64encode(json.dumps(configuration).encode("utf-8")).decode("utf-8")
 
-        if self._configuration_header_key in self.___http_client.headers:
-            del self.___http_client.headers[self._configuration_header_key]
+        if self.___configuration_header_key in self.___http_client.headers:
+            del self.___http_client.headers[self.___configuration_header_key]
 
-        self.___http_client.headers[self._configuration_header_key] = encoded_json
+        self.___http_client.headers[self.___configuration_header_key] = encoded_json
 
         return _Disposable{{{Async}}}Configuration(self)
 
     def clear_configuration(self) -> None:
         """Clears configuration data for all subsequent API requests."""
 
-        if self._configuration_header_key in self.___http_client.headers:
-            del self.___http_client.headers[self._configuration_header_key]
+        if self.___configuration_header_key in self.___http_client.headers:
+            del self.___http_client.headers[self.___configuration_header_key]
 {{/Special_NexusFeatures}}
 
     {{{Def}}} _invoke(self, typeOfT: Optional[Type[T]], method: str, relative_url: str, accept_header_value: Optional[str], content_type_value: Optional[str], content: Union[None, str, bytes, Iterable[bytes], AsyncIterable[bytes]]) -> T:

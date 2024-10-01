@@ -20,11 +20,11 @@ from zipfile import ZipFile
 
 from httpx import AsyncClient, Client, Request, Response
 {{{VersioningImports}}}
-from .PythonEncoder import JsonEncoder, _json_encoder_options
+from ._encoder import JsonEncoder
 {{#Special_NexusFeatures}}
-from .Shared import DataResponse
+from ._shared import DataResponse
 {{/Special_NexusFeatures}}
-from .Shared import {{{ExceptionType}}}
+from ._shared import {{{ExceptionType}}}, _json_encoder_options
 
 T = TypeVar("T")
 

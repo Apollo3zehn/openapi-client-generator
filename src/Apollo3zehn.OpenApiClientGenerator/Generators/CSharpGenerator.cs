@@ -23,7 +23,10 @@ public class CSharpGenerator
         _settings = settings;
     }
 
-    public string Generate(params OpenApiDocument[] documents)
+    public void Generate(
+        string targetFolderPath,
+        params OpenApiDocument[] documents
+    )
     {
         _additionalModels = new();
 
@@ -194,11 +197,16 @@ public class CSharpGenerator
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
 
-        return stubble.Render(
+        var client = stubble.Render(
             mainClientTemplate, 
             mainClientData, 
             new RenderSettings() { SkipHtmlEncoding = true }
         );
+
+        // Write
+        Directory.CreateDirectory(targetFolderPath);
+
+        File.WriteAllText(Path.Combine(targetFolderPath, $"{_settings.ClientName}Client.g.cs"), client);
     }
 
     private void AppendSubClientSourceText(
