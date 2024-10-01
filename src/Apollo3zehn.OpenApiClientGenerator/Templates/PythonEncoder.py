@@ -97,7 +97,7 @@ class JsonEncoder:
                 return cast(T, instance3)
 
             # list
-            elif issubclass(origin, list):
+            elif issubclass(cast(type, origin), list):
 
                 listType = args[0]
                 instance1: list = list()
@@ -108,7 +108,7 @@ class JsonEncoder:
                 return cast(T, instance1)
             
             # dict
-            elif issubclass(origin, dict):
+            elif issubclass(cast(type, origin), dict):
 
                 # keyType = args[0]
                 valueType = args[1]
