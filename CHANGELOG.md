@@ -1,3 +1,7 @@
+## v1.0.0-beta.14 - 2024-10-29
+
+Fixes for Nexus.
+
 ## v1.0.0-beta.12 - 2024-10-01
 
 Fixes wrong python import.

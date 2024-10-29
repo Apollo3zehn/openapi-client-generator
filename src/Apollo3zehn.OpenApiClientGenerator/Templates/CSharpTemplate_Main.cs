@@ -53,14 +53,14 @@ public interface I{{{ClientName}}}Client
 public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {
 {{#Special_NexusFeatures}}
-    private const string ConfigurationHeaderKey = "{{{ConfigurationHeaderKey}}}";
+    private const string ConfigurationHeaderKey = "{{{Special_ConfigurationHeaderKey}}}";
 {{/Special_NexusFeatures}}
 {{#Special_AccessTokenSupport}}
     private const string AuthorizationHeaderKey = "Authorization";
 
-    private string? ___token;
+    private string? __token;
 {{/Special_AccessTokenSupport}}
-    private HttpClient _httpClient;
+    private HttpClient __httpClient;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="{{{ClientName}}}Client"/>.
@@ -80,7 +80,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         if (httpClient.BaseAddress is null)
             throw new Exception("The base address of the HTTP client must be set.");
 
-        _httpClient = httpClient;
+        __httpClient = httpClient;
 
 {{{VersioningPropertyAssignments}}}
     }
@@ -89,7 +89,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
     /// <summary>
     /// Gets a value which indicates if the user is authenticated.
     /// </summary>
-    public bool IsAuthenticated => ___token is not null;
+    public bool IsAuthenticated => __token is not null;
 {{/Special_AccessTokenSupport}}
 
 {{{VersioningProperties}}}
@@ -99,10 +99,10 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
     public void SignIn(string accessToken)
     {
         var authorizationHeaderValue = $"Bearer {accessToken}";
-        _httpClient.DefaultRequestHeaders.Remove(AuthorizationHeaderKey);
-        _httpClient.DefaultRequestHeaders.Add(AuthorizationHeaderKey, authorizationHeaderValue);
+        __httpClient.DefaultRequestHeaders.Remove(AuthorizationHeaderKey);
+        __httpClient.DefaultRequestHeaders.Add(AuthorizationHeaderKey, authorizationHeaderValue);
 
-        ___token = accessToken;
+        __token = accessToken;
     }
 {{/Special_AccessTokenSupport}}
 
@@ -112,8 +112,8 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
     {
         var encodedJson = Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(configuration));
 
-        _httpClient.DefaultRequestHeaders.Remove(ConfigurationHeaderKey);
-        _httpClient.DefaultRequestHeaders.Add(ConfigurationHeaderKey, encodedJson);
+        __httpClient.DefaultRequestHeaders.Remove(ConfigurationHeaderKey);
+        __httpClient.DefaultRequestHeaders.Add(ConfigurationHeaderKey, encodedJson);
 
         return new DisposableConfiguration(this);
     }
@@ -121,7 +121,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
     /// <inheritdoc />
     public void ClearConfiguration()
     {
-        _httpClient.DefaultRequestHeaders.Remove(ConfigurationHeaderKey);
+        __httpClient.DefaultRequestHeaders.Remove(ConfigurationHeaderKey);
     }
 {{/Special_NexusFeatures}}
 
@@ -131,7 +131,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         using var request = BuildRequestMessage(method, relativeUrl, content, contentTypeValue, acceptHeaderValue);
 
         // send request
-        var response = _httpClient.Send(request, HttpCompletionOption.ResponseHeadersRead);
+        var response = __httpClient.Send(request, HttpCompletionOption.ResponseHeadersRead);
 
         // process response
         if (!response.IsSuccessStatusCode)
@@ -185,7 +185,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         using var request = BuildRequestMessage(method, relativeUrl, content, contentTypeValue, acceptHeaderValue);
 
         // send request
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var response = await __httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
         // process response
         if (!response.IsSuccessStatusCode)
@@ -265,7 +265,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        _httpClient?.Dispose();
+        __httpClient?.Dispose();
     }
 
 {{#Special_NexusFeatures}}
@@ -282,13 +282,13 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         IEnumerable<string> resourcePaths,
         Action<double>? onProgress = default)
     {
-        var catalogItemMap = Catalogs.SearchCatalogItems(resourcePaths.ToList());
+        var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePaths.ToList());
         var result = new Dictionary<string, DataResponse>();
         var progress = 0.0;
 
         foreach (var (resourcePath, catalogItem) in catalogItemMap)
         {
-            using var responseMessage = Data.GetStream(resourcePath, begin, end);
+            using var responseMessage = V1.Data.GetStream(resourcePath, begin, end);
 
             var doubleData = ReadAsDoubleAsync(responseMessage, useAsync: false)
                 .GetAwaiter()
@@ -343,13 +343,13 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         Action<double>? onProgress = default,
         CancellationToken cancellationToken = default)
     {
-        var catalogItemMap = await Catalogs.SearchCatalogItemsAsync(resourcePaths.ToList()).ConfigureAwait(false);
+        var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePaths.ToList()).ConfigureAwait(false);
         var result = new Dictionary<string, DataResponse>();
         var progress = 0.0;
 
         foreach (var (resourcePath, catalogItem) in catalogItemMap)
         {
-            using var responseMessage = await Data.GetStreamAsync(resourcePath, begin, end, cancellationToken).ConfigureAwait(false);
+            using var responseMessage = await V1.Data.GetStreamAsync(resourcePath, begin, end, cancellationToken).ConfigureAwait(false);
             var doubleData = await ReadAsDoubleAsync(responseMessage, useAsync: true, cancellationToken).ConfigureAwait(false);
             var resource = catalogItem.Resource;
 
@@ -486,7 +486,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             ? default
             : JsonSerializer.Deserialize<IReadOnlyDictionary<string, JsonElement>?>(JsonSerializer.Serialize(configuration));
 
-        var exportParameters = new ExportParameters(
+        var exportParameters = new V1.ExportParameters(
             begin,
             end,
             filePeriod,
@@ -495,7 +495,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             actualConfiguration);
 
         // Start Job
-        var job = Jobs.Export(exportParameters);
+        var job = V1.Jobs.Export(exportParameters);
 
         // Wait for job to finish
         string? artifactId = default;
@@ -504,15 +504,15 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         {
             Thread.Sleep(TimeSpan.FromSeconds(1));
 
-            var jobStatus = Jobs.GetJobStatus(job.Id);
+            var jobStatus = V1.Jobs.GetJobStatus(job.Id);
 
-            if (jobStatus.Status == TaskStatus.Canceled)
+            if (jobStatus.Status == Nexus.Api.V1.TaskStatus.Canceled)
                 throw new OperationCanceledException("The job has been cancelled.");
 
-            else if (jobStatus.Status == TaskStatus.Faulted)
+            else if (jobStatus.Status == Nexus.Api.V1.TaskStatus.Faulted)
                 throw new OperationCanceledException($"The job has failed. Reason: {jobStatus.ExceptionMessage}");
 
-            else if (jobStatus.Status == TaskStatus.RanToCompletion)
+            else if (jobStatus.Status == Nexus.Api.V1.TaskStatus.RanToCompletion)
             {
                 if (jobStatus.Result.HasValue &&
                     jobStatus.Result.Value.ValueKind == JsonValueKind.String)
@@ -535,7 +535,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             return;
 
         // Download zip file
-        var responseMessage = Artifacts.Download(artifactId);
+        var responseMessage = V1.Artifacts.Download(artifactId);
         var sourceStream = responseMessage.Content.ReadAsStream();
 
         long? length = default;
@@ -624,7 +624,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             ? default
             : JsonSerializer.Deserialize<IReadOnlyDictionary<string, JsonElement>?>(JsonSerializer.Serialize(configuration));
 
-        var exportParameters = new ExportParameters(
+        var exportParameters = new V1.ExportParameters(
             begin,
             end,
             filePeriod,
@@ -633,7 +633,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             actualConfiguration);
 
         // Start Job
-        var job = await Jobs.ExportAsync(exportParameters).ConfigureAwait(false);
+        var job = await V1.Jobs.ExportAsync(exportParameters).ConfigureAwait(false);
 
         // Wait for job to finish
         string? artifactId = default;
@@ -642,15 +642,15 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         {
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
 
-            var jobStatus = await Jobs.GetJobStatusAsync(job.Id, cancellationToken).ConfigureAwait(false);
+            var jobStatus = await V1.Jobs.GetJobStatusAsync(job.Id, cancellationToken).ConfigureAwait(false);
 
-            if (jobStatus.Status == TaskStatus.Canceled)
+            if (jobStatus.Status == Nexus.Api.V1.TaskStatus.Canceled)
                 throw new OperationCanceledException("The job has been cancelled.");
 
-            else if (jobStatus.Status == TaskStatus.Faulted)
+            else if (jobStatus.Status == Nexus.Api.V1.TaskStatus.Faulted)
                 throw new OperationCanceledException($"The job has failed. Reason: {jobStatus.ExceptionMessage}");
 
-            else if (jobStatus.Status == TaskStatus.RanToCompletion)
+            else if (jobStatus.Status == Nexus.Api.V1.TaskStatus.RanToCompletion)
             {
                 if (jobStatus.Result.HasValue &&
                     jobStatus.Result.Value.ValueKind == JsonValueKind.String)
@@ -673,7 +673,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             return;
 
         // Download zip file
-        var responseMessage = await Artifacts.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
+        var responseMessage = await V1.Artifacts.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
         var sourceStream = await responseMessage.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
         long? length = default;
@@ -824,7 +824,7 @@ internal static class Utilities
 /// <param name="SamplePeriod">The sample period.</param>
 /// <param name="Values">The data.</param>
 public record DataResponse(
-    CatalogItem CatalogItem, 
+    V1.CatalogItem CatalogItem, 
     string? Name,
     string? Unit,
     string? Description,
