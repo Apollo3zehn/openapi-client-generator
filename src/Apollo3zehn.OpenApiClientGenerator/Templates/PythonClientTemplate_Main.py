@@ -184,13 +184,13 @@ class {{{ClientName}}}{{{Async}}}Client:
             onProgress: A callback which accepts the current progress.
         """
 
-        catalog_item_map = {{{Await}}}self.catalogs.search_catalog_items(list(resource_paths))
+        catalog_item_map = {{{Await}}}self.v1.catalogs.search_catalog_items(list(resource_paths))
         result: dict[str, DataResponse] = {}
         progress: float = 0
 
         for (resource_path, catalog_item) in catalog_item_map.items():
 
-            response = {{{Await}}}self.data.get_stream(resource_path, begin, end)
+            response = {{{Await}}}self.v1.data.get_stream(resource_path, begin, end)
 
             try:
                 double_data = {{{Await}}}self._read_as_double(response)
@@ -270,7 +270,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         )
 
         # Start job
-        job = {{{Await}}}self.jobs.export(export_parameters)
+        job = {{{Await}}}self.v1.jobs.export(export_parameters)
 
         # Wait for job to finish
         artifact_id: Optional[str] = None
@@ -278,7 +278,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         while True:
             {{{Await}}}{{{AsyncioSleep}}}(1)
             
-            job_status = {{{Await}}}self.jobs.get_job_status(job.id)
+            job_status = {{{Await}}}self.v1.jobs.get_job_status(job.id)
 
             if (job_status.status == TaskStatus.CANCELED):
                 raise Exception("The job has been cancelled.")
@@ -310,7 +310,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         # Download zip file
         with NamedTemporaryFile() as target_stream:
 
-            response = {{{Await}}}self.artifacts.download(artifact_id)
+            response = {{{Await}}}self.v1.artifacts.download(artifact_id)
             
             try:
 

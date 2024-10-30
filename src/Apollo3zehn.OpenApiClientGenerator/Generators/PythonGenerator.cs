@@ -77,6 +77,9 @@ public class PythonGenerator
             // Versioning
             versioningImportsBuilder.AppendLine($"from {version} import {version}, {version}Async");
 
+            if (_settings.Special_NexusFeatures)
+                versioningImportsBuilder.AppendLine($"from {version} import ExportParameters, TaskStatus");
+
             versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}{{{{AsyncPlaceholder}}}}");
 
             versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}{{{{AsyncPlaceholder}}}}(self)");

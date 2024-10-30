@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 {{#Special_NexusFeatures}}
-import array
 import asyncio
 import base64
 {{/Special_NexusFeatures}}
 import json
 {{#Special_NexusFeatures}}
-from datetime import datetime, time, timedelta
+import time
+from array import array
+from datetime import datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Callable
 {{/Special_NexusFeatures}}
