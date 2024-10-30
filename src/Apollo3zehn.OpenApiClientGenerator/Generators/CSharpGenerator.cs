@@ -192,6 +192,7 @@ public class CSharpGenerator
             VersioningProperties = versioningPropertiesBuilder,
             ExceptionType = _settings.ExceptionType,
             SubClients = subClients,
+            Special_ConfigurationHeaderKey = _settings.Special_ConfigurationHeaderKey,
             Special_WebAssemblySupport = _settings.Special_WebAssemblySupport,
             Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures

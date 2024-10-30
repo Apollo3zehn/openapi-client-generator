@@ -22,7 +22,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 {{#Special_AccessTokenSupport}}
     ___authorization_header_key: str = "Authorization"
 
-    __token: Optional[str]
+    ___token: Optional[str]
 {{/Special_AccessTokenSupport}}
     ___http_client: {{{Async}}}Client
 
@@ -51,7 +51,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         self.___http_client = http_client
 {{#Special_AccessTokenSupport}}
-        self.__token = None
+        self.___token = None
 {{/Special_AccessTokenSupport}}
 
 {{{VersioningFieldAssignments}}}
@@ -60,26 +60,26 @@ class {{{ClientName}}}{{{Async}}}Client:
     @property
     def is_authenticated(self) -> bool:
         """Gets a value which indicates if the user is authenticated."""
-        return self.__token is not None
+        return self.___token is not None
 {{/Special_AccessTokenSupport}}
 
 {{{VersioningProperties}}}
 
 {{#Special_AccessTokenSupport}}
-    def sign_in(self, access__token: str):
+    def sign_in(self, access_token: str):
         """Signs in the user.
 
         Args:
-            access__token: The access token.
+            access_token: The access token.
         """
 
-        authorization_header_value = f"Bearer {access__token}"
+        authorization_header_value = f"Bearer {access_token}"
 
         if self.___authorization_header_key in self.___http_client.headers:
             del self.___http_client.headers[self.___authorization_header_key]
 
         self.___http_client.headers[self.___authorization_header_key] = authorization_header_value
-        self.__token = access__token
+        self.___token = access_token
 {{/Special_AccessTokenSupport}}
 
 {{#Special_NexusFeatures}}

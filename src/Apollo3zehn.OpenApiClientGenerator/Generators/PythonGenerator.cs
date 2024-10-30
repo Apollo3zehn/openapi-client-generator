@@ -190,6 +190,7 @@ public class PythonGenerator
             For = "for",
             ExceptionType = _settings.ExceptionType,
             ExceptionCodePrefix = _settings.ExceptionCodePrefix,
+            Special_ConfigurationHeaderKey = _settings.Special_ConfigurationHeaderKey,
             Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
@@ -215,6 +216,7 @@ public class PythonGenerator
             For = "async for",
             ExceptionType = _settings.ExceptionType,
             ExceptionCodePrefix = _settings.ExceptionCodePrefix,
+            Special_ConfigurationHeaderKey = _settings.Special_ConfigurationHeaderKey,
             Special_AccessTokenSupport = _settings.Special_AccessTokenSupport,
             Special_NexusFeatures = _settings.Special_NexusFeatures
         };
