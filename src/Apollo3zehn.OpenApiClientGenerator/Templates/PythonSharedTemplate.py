@@ -1,17 +1,17 @@
 ﻿{{#Special_NexusFeatures}}
-import array
+from array import array
 from dataclasses import dataclass
-from datetime import timedelta
 {{/Special_NexusFeatures}}
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Type, cast
 {{#Special_NexusFeatures}}
 from typing import Optional
+
+from nexus_api.V1 import CatalogItem
 {{/Special_NexusFeatures}}
 
-from ._encoder import (JsonEncoderOptions, to_camel_case,
-                                     to_snake_case)
+from ._encoder import JsonEncoderOptions, to_camel_case, to_snake_case
 
 
 def _to_string(value: Any) -> str:

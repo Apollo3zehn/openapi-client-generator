@@ -1,3 +1,7 @@
+## v1.0.0-beta.16 - 2024-10-30
+
+Fixes for Nexus.
+
 ## v1.0.0-beta.15 - 2024-10-30
 
 Fixes for Nexus.
