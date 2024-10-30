@@ -3,7 +3,7 @@
     
 {{{SubClientFields}}}
 
-    def __init__(self, client: {{{ClientName}}}{{{Async}}}Client):
+    def __init__(self, invoke: HttpRequestHandler{{{Async}}}):
         """
         Initializes a new instance of {{{Version}}}{{{Async}}}
         

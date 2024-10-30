@@ -11,9 +11,9 @@ from uuid import UUID
 
 from httpx import Response
 
-from . import JsonEncoder
-from ._client import {{{ClientName}}}AsyncClient, {{{ClientName}}}Client
-from ._shared import _json_encoder_options, _to_string
+from ._encoder import JsonEncoder
+from ._shared import (HttpRequestHandler, HttpRequestHandlerAsync,
+                      _json_encoder_options, _to_string)
 
 T = TypeVar("T")
 

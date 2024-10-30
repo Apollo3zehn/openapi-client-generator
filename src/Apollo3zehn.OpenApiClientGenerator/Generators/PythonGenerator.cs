@@ -75,14 +75,14 @@ public class PythonGenerator
                 version = Shared.FirstCharToUpper(version);
 
             // Versioning
-            versioningImportsBuilder.AppendLine($"from {version} import {version}, {version}Async");
+            versioningImportsBuilder.AppendLine($"from .{version} import {version}, {version}Async");
 
             if (_settings.Special_NexusFeatures)
-                versioningImportsBuilder.AppendLine($"from {version} import ExportParameters, TaskStatus");
+                versioningImportsBuilder.AppendLine($"from .{version} import CatalogItem, ExportParameters, TaskStatus");
 
             versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}{{{{AsyncPlaceholder}}}}");
 
-            versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}{{{{AsyncPlaceholder}}}}(self)");
+            versioningFieldAssignmentsBuilder.AppendLine($"        self._{Shared.FirstCharToLower(version)} = {version}{{{{AsyncPlaceholder}}}}(self._invoke)");
 
             versioningPropertiesBuilder.AppendLine($"    @property");
             versioningPropertiesBuilder.AppendLine($"    def {Shared.FirstCharToLower(version)}(self) -> {version}{{{{AsyncPlaceholder}}}}:");
@@ -92,7 +92,6 @@ public class PythonGenerator
 
             // Sync client
             var syncClientProperties = GenerateClientProperties(
-                _settings.ClientName,
                 document, 
                 sourceTextBuilder, 
                 async: false
@@ -100,7 +99,6 @@ public class PythonGenerator
 
             var syncClientData = new
             {
-                ClientName = _settings.ClientName,
                 Async = "",
                 Version = version,
                 SubClientFields = syncClientProperties.Fields,
@@ -112,7 +110,6 @@ public class PythonGenerator
 
             // Async client
             var asyncClientProperties = GenerateClientProperties(
-                _settings.ClientName,
                 document, 
                 sourceTextBuilder, 
                 async: true
@@ -120,7 +117,6 @@ public class PythonGenerator
 
             var asyncClientData = new
             {
-                ClientName = _settings.ClientName,
                 Async = "Async",
                 Version = version,
                 SubClientFields = asyncClientProperties.Fields,
@@ -153,7 +149,6 @@ public class PythonGenerator
 
             var moduleData = new
             {
-                ClientName = _settings.ClientName,
                 SyncClient = syncClient,
                 SyncSubClients = syncClientProperties.Source,
                 AsyncClient = asyncClient,
@@ -259,8 +254,7 @@ public class PythonGenerator
 
         var sharedData = new
         {
-            ExceptionType = _settings.ExceptionType,
-            Special_NexusFeatures = _settings.Special_NexusFeatures
+            ExceptionType = _settings.ExceptionType
         };
 
         var shared = stubble.Render(sharedTemplate, sharedData);
@@ -287,7 +281,6 @@ public class PythonGenerator
     }
 
     private SubClientProperties GenerateClientProperties(
-        string clientName,
         OpenApiDocument document, 
         StringBuilder sourceTextBuilder, 
         bool async
@@ -317,7 +310,7 @@ public class PythonGenerator
 
         foreach (var subClient in subClientNames)
         {
-            sourceTextBuilder.AppendLine($"        self._{Shared.FirstCharToLower(subClient)} = {subClient}{prefix}Client(client)");
+            sourceTextBuilder.AppendLine($"        self._{Shared.FirstCharToLower(subClient)} = {subClient}{prefix}Client(invoke)");
         }
 
         var fieldAssignments = sourceTextBuilder.ToString();
@@ -346,7 +339,6 @@ $@"    @property
         foreach (var clientGroup in groupedClients)
         {
             AppendSubClientSourceText(
-                clientName,
                 clientGroup.Key,
                 clientGroup.ToDictionary(entry => entry.path.Key, entry => entry.path.Value),
                 sourceTextBuilder,
@@ -368,7 +360,6 @@ $@"    @property
     }
 
     private void AppendSubClientSourceText(
-        string clientName,
         string className,
         IDictionary<string, OpenApiPathItem> methodMap,
         StringBuilder sourceTextBuilder,
@@ -385,10 +376,10 @@ $@"    @property
 $@"class {augmentedClassName}:
     """"""Provides methods to interact with {Shared.SplitCamelCase(className).ToLower()}.""""""
 
-    ___client: {clientName}{prefix}Client
+    ___invoke: HttpRequestHandler{prefix}
     
-    def __init__(self, client: {clientName}{prefix}Client):
-        self.___client = client
+    def __init__(self, invoke: HttpRequestHandler{prefix}):
+        self.___invoke = invoke
 ");
 
         foreach (var entry in methodMap)
@@ -560,7 +551,7 @@ $@"class {augmentedClassName}:
             : returnType;
 
         sourceTextBuilder.AppendLine();
-        sourceTextBuilder.AppendLine($"        return self.___client._invoke({invokeType}, \"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content})");
+        sourceTextBuilder.AppendLine($"        return self.___invoke({invokeType}, \"{operationType.ToString().ToUpper()}\", __url, {acceptHeaderValue}, {contentTypeValue}, {content})");
     }
 
     private void AppendModelSourceText(
