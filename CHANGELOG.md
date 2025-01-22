@@ -1,4 +1,4 @@
-## v1.0.0-beta.17 - 2024-10-30
+## v1.0.0-beta.18 - 2025-01-22
 
 Fix encoding and decoding of `UUID` keys in dictionaries
 
