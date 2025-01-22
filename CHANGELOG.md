@@ -1,5 +1,9 @@
 ## v1.0.0-beta.17 - 2024-10-30
 
+Fix encoding and decoding of `UUID` keys in dictionaries
+
+## v1.0.0-beta.17 - 2024-10-30
+
 Fixes for Nexus.
 
 ## v1.0.0-beta.16 - 2024-10-30
