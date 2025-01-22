@@ -1,7 +1,4 @@
-﻿# Python <= 3.9
-from __future__ import annotations
-
-import json
+﻿import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum

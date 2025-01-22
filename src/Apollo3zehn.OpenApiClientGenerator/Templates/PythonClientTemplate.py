@@ -1,7 +1,4 @@
-﻿# Python <= 3.9
-from __future__ import annotations
-
-{{#Special_NexusFeatures}}
+﻿{{#Special_NexusFeatures}}
 import asyncio
 import base64
 {{/Special_NexusFeatures}}
