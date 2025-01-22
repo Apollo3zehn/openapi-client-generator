@@ -15,6 +15,10 @@ class TestEnum(IntEnum):
     B = 2
 
 @dataclass(frozen=True)
+class TestClassNested:
+    uuid_value: UUID
+
+@dataclass(frozen=True)
 class TestClass:
     int_value: int
     float_value: float
@@ -23,10 +27,6 @@ class TestClass:
     timedelta_value: timedelta
     enum_value: TestEnum
     nested_value: Optional[TestClassNested] = None
-
-@dataclass(frozen=True)
-class TestClassNested:
-    uuid_value: UUID
 
 def can_encode_dataclass_test():
 
