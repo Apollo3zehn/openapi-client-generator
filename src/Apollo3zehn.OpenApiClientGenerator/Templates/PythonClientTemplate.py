@@ -1,4 +1,6 @@
-﻿{{#Special_NexusFeatures}}
+﻿from __future__ import annotations
+
+{{#Special_NexusFeatures}}
 import asyncio
 import base64
 {{/Special_NexusFeatures}}

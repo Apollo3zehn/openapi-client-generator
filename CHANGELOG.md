@@ -1,5 +1,9 @@
 ## v1.0.0-beta.18 - 2025-01-22
 
+Revert changes regarding `from __future__ import annotations`
+
+## v1.0.0-beta.18 - 2025-01-22
+
 Fix encoding and decoding of `UUID` keys in dictionaries
 
 ## v1.0.0-beta.17 - 2024-10-30
