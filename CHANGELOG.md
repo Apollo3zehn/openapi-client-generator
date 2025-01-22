@@ -1,4 +1,4 @@
-## v1.0.0-beta.18 - 2025-01-22
+## v1.0.0-beta.19 - 2025-01-22
 
 Revert changes regarding `from __future__ import annotations`
 
