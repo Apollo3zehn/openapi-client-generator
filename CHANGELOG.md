@@ -1,3 +1,7 @@
+## v1.0.0-beta.22 - 2026-08-25
+
+- Add `Load`/`LoadAsync` to the `INexusClient` interface to enable DI consumers (e.g. Blazor UI) to call high-level data loading through the interface
+
 ## v1.0.0-beta.21 - 2026-08-25
 
 - Add per-channel error capture in C# and Python high-level `Load`/`load` methods

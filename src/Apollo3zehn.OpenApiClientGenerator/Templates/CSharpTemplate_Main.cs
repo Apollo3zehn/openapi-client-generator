@@ -46,6 +46,34 @@ public interface I{{{ClientName}}}Client
     /// Clears configuration data for all subsequent API requests.
     /// </summary>
     void ClearConfiguration();
+
+    /// <summary>
+    /// This high-level methods simplifies loading multiple resources at once.
+    /// </summary>
+    /// <param name="begin">Start date/time.</param>
+    /// <param name="end">End date/time.</param>
+    /// <param name="resourcePaths">The resource paths.</param>
+    /// <param name="onProgress">A callback which accepts the current progress.</param>
+    IReadOnlyDictionary<string, DataResponse> Load(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Action<double>? onProgress = default);
+
+    /// <summary>
+    /// This high-level methods simplifies loading multiple resources at once.
+    /// </summary>
+    /// <param name="begin">Start date/time.</param>
+    /// <param name="end">End date/time.</param>
+    /// <param name="resourcePaths">The resource paths.</param>
+    /// <param name="onProgress">A callback which accepts the current progress.</param>
+    /// <param name="cancellationToken">A token to cancel the current operation.</param>
+    Task<IReadOnlyDictionary<string, DataResponse>> LoadAsync(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Action<double>? onProgress = default,
+        CancellationToken cancellationToken = default);
 {{/Special_NexusFeatures}}
 }
 
@@ -314,7 +342,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
                     }
                     catch (Exception ex)
                     {
-                        return (current.ResourcePath, Values: null, Error: ex);
+                        return (current.ResourcePath, Values: (double[]?)null, Error: ex);
                     }
                 }))
                 .ToArray();
@@ -471,7 +499,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         }
 
         if (status is not null &&
-            status.State == V2.BatchStreamSessionState.Faulted &&
+            status.State == Nexus.Api.V2.BatchStreamSessionState.Faulted &&
             !string.IsNullOrWhiteSpace(status.FaultReason))
         {
             var rootCausePath = status.FaultedChannelResourcePath ?? resourcePath;
