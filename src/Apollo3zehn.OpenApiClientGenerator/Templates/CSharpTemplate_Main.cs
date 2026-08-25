@@ -297,27 +297,44 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             var readTasks = responses
                 .Select(current => Task.Run(() =>
                 {
-                    var values = ReadAsDoubleAsync(
-                        current.Response,
-                        useAsync: false,
-                        bytesRead =>
-                        {
-                            if (totalLength > 0)
-                                onProgress?.Invoke(System.Threading.Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
-                        })
-                        .GetAwaiter()
-                        .GetResult();
+                    try
+                    {
+                        var values = ReadAsDoubleAsync(
+                            current.Response,
+                            useAsync: false,
+                            bytesRead =>
+                            {
+                                if (totalLength > 0)
+                                    onProgress?.Invoke(Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
+                            })
+                            .GetAwaiter()
+                            .GetResult();
 
-                    return (current.ResourcePath, Values: values);
+                        return (current.ResourcePath, Values: values, Error: (Exception?)null);
+                    }
+                    catch (Exception ex)
+                    {
+                        return (current.ResourcePath, Values: null, Error: ex);
+                    }
                 }))
                 .ToArray();
 
             Task.WaitAll(readTasks);
 
+            var errors = readTasks
+                .Where(task => task.Result.Error is not null)
+                .Select(task => task.Result)
+                .ToList();
+
+            if (errors.Count > 0)
+            {
+                throw CreateChannelExceptionAsync(session.SessionId, errors[0].ResourcePath, errors[0].Error!, CancellationToken.None).GetAwaiter().GetResult();
+            }
+
             foreach (var task in readTasks)
             {
-                var (resourcePath, values) = task.Result;
-                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values);
+                var (resourcePath, values, _) = task.Result;
+                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values!);
             }
         }
         finally
@@ -359,24 +376,40 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             var readTasks = responses
                 .Select(async current =>
                 {
-                    var values = await ReadAsDoubleAsync(
-                        current.Response,
-                        useAsync: true,
-                        bytesRead =>
-                        {
-                            if (totalLength > 0)
-                                onProgress?.Invoke(System.Threading.Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
-                        },
-                        cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        var values = await ReadAsDoubleAsync(
+                            current.Response,
+                            useAsync: true,
+                            bytesRead =>
+                            {
+                                if (totalLength > 0)
+                                    onProgress?.Invoke(Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
+                            },
+                            cancellationToken).ConfigureAwait(false);
 
-                    return (current.ResourcePath, Values: values);
+                        return (current.ResourcePath, Values: values, Error: (Exception?)null);
+                    }
+                    catch (Exception ex)
+                    {
+                        return (current.ResourcePath, Values: (double[]?)null, Error: ex);
+                    }
                 })
                 .ToArray();
 
             var data = await Task.WhenAll(readTasks).ConfigureAwait(false);
 
-            foreach (var (resourcePath, values) in data)
-                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values);
+            var errors = data
+                .Where(item => item.Error is not null)
+                .ToList();
+
+            if (errors.Count > 0)
+            {
+                throw await CreateChannelExceptionAsync(session.SessionId, errors[0].ResourcePath, errors[0].Error!, cancellationToken).ConfigureAwait(false);
+            }
+
+            foreach (var (resourcePath, values, _) in data)
+                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values!);
         }
         finally
         {
@@ -413,6 +446,41 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             SamplePeriod: catalogItem.Representation.SamplePeriod,
             Values: doubleData
         );
+    }
+
+    private async Task<Exception> CreateChannelExceptionAsync(
+        Guid sessionId, 
+        string resourcePath, 
+        Exception error, 
+        CancellationToken cancellationToken)
+    {
+        // User cancel: if the token was canceled, propagate OCE as-is
+        if (error is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            return error;
+
+        // Query status endpoint for root cause
+        V2.BatchStreamSessionStatus? status = default;
+
+        try
+        {
+            status = await V2.Data.GetBatchStreamSessionStatusAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Status query failed (e.g. 404 after grace period) — fall back to local exception
+        }
+
+        if (status is not null &&
+            status.State == V2.BatchStreamSessionState.Faulted &&
+            !string.IsNullOrWhiteSpace(status.FaultReason))
+        {
+            var rootCausePath = status.FaultedChannelResourcePath ?? resourcePath;
+            var message = $"The batch stream session faulted. Root cause channel: {rootCausePath}. Reason: {status.FaultReason}";
+            return new NexusException("N02", message, error);
+        }
+
+        // Default: wrap local error with channel context
+        return new NexusException("N02", $"The batch stream session faulted. Channel: {resourcePath}. Reason: {error.Message}", error);
     }
 
     private async Task<double[]> ReadAsDoubleAsync(HttpResponseMessage responseMessage, bool useAsync, Action<long>? reportProgress = default, CancellationToken cancellationToken = default)

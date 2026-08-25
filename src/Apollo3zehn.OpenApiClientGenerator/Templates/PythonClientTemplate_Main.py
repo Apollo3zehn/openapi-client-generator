@@ -225,7 +225,14 @@ class {{{ClientName}}}{{{Async}}}Client:
                 on_progress(consumed / total_length)
 
         try:
-            values = await asyncio.gather(*[self._read_as_double(response, report_progress) for (_, response) in response_entries])
+            async def _read_channel(resource_path, response):
+                try:
+                    values = await self._read_as_double(response, report_progress)
+                    return (resource_path, values, None)
+                except Exception as ex:
+                    return (resource_path, None, ex)
+
+            results = await asyncio.gather(*[_read_channel(rp, resp) for (rp, resp) in response_entries])
 {{/Async}}
 {{^Async}}
         consumed = [0]
@@ -238,13 +245,28 @@ class {{{ClientName}}}{{{Async}}}Client:
                     on_progress(consumed[0] / total_length)
 
         try:
+            def _read_channel(entry):
+                resource_path, response = entry
+                try:
+                    values = self._read_as_double(response, report_progress)
+                    return (resource_path, values, None)
+                except Exception as ex:
+                    return (resource_path, None, ex)
+
             with ThreadPoolExecutor(max_workers=len(response_entries)) as executor:
-                values = list(executor.map(lambda entry: self._read_as_double(entry[1], report_progress), response_entries))
+                results = list(executor.map(_read_channel, response_entries))
 {{/Async}}
 
         finally:
             for (_, response) in response_entries:
                 {{{Await}}}response.{{{Aclose}}}()
+
+        errors = [(rp, ex) for (rp, _, ex) in results if ex is not None]
+
+        if errors:
+            {{{Await}}}self._create_channel_exception(session.session_id, errors[0][0], errors[0][1])
+
+        values = [val for (_, val, _) in results]
 
         for ((resource_path, _), double_data) in zip(response_entries, values):
 
@@ -293,6 +315,22 @@ class {{{ClientName}}}{{{Async}}}Client:
         doubleBuffer = array("d", byteBuffer)
 
         return doubleBuffer 
+
+    {{{Def}}} _create_channel_exception(self, session_id: UUID, resource_path: str, error: Exception) -> None:
+        try:
+            status = {{{Await}}}self.v2.data.get_batch_stream_session_status(session_id)
+        except:
+            status = None
+
+        if status is not None and \
+            status.state == BatchStreamSessionState.FAULTED and \
+            status.fault_reason:
+
+            root_cause_path = status.faulted_channel_resource_path or resource_path
+            message = f"The batch stream session faulted. Root cause channel: {root_cause_path}. Reason: {status.fault_reason}"
+            raise NexusException("N02", message) from error
+
+        raise NexusException("N02", f"The batch stream session faulted. Channel: {resource_path}. Reason: {error}") from error
 
     {{{Def}}} export(
         self,

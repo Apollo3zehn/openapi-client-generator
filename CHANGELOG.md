@@ -1,3 +1,13 @@
+## v1.0.0-beta.21 - 2026-08-25
+
+- Add per-channel error capture in C# and Python high-level `Load`/`load` methods
+- Query batch stream session status endpoint on failure to identify the root-cause channel and fault reason
+- Wrap channel errors in `NexusException` with root-cause channel and fault reason
+- Preserve original error as `InnerException` (C#) / via `raise ... from ...` (Python) in wrapped `NexusException`
+- Detect user cancellation and propagate `OperationCanceledException` as-is (C#)
+- Add `BatchStreamSessionState` to Python V2 imports
+- Add `CreateChannelExceptionAsync` / `_create_channel_exception` helper methods
+
 ## v1.0.0-beta.20 - 2026-08-25
 
 - Switch C# and Python high-level `Load`/`load` methods to the Nexus v2 batch streaming API

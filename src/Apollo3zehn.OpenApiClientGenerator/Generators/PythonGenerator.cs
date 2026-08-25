@@ -81,7 +81,7 @@ public class PythonGenerator
                 versioningImportsBuilder.AppendLine($"from .{version} import CatalogItem, ExportParameters, TaskStatus");
 
             if (_settings.Special_NexusFeatures && version == "V2")
-                versioningImportsBuilder.AppendLine($"from .{version} import BatchStreamRequest");
+                versioningImportsBuilder.AppendLine($"from .{version} import BatchStreamRequest, BatchStreamSessionState");
 
             versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}{{{{AsyncPlaceholder}}}}");
 
