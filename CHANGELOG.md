@@ -1,3 +1,12 @@
+## v1.0.0-beta.20 - 2026-08-25
+
+- Switch C# and Python high-level `Load`/`load` methods to the Nexus v2 batch streaming API
+- Read all channels concurrently (`Task.WhenAll` / `asyncio.gather` / `ThreadPoolExecutor`) instead of sequentially
+- Add byte-level progress reporting across all channels (replaces per-resource step progress)
+- Enable HTTP/2 and streaming responses for the Python client
+- Stream Python `_read_as_double` in chunks via `iter_bytes`/`aiter_bytes` instead of buffering the entire body
+- Split versioned Nexus feature imports by API version (v1: `CatalogItem`, `ExportParameters`, `TaskStatus`; v2: `BatchStreamRequest`)
+
 ## v1.0.0-beta.19 - 2025-01-22
 
 Revert changes regarding `from __future__ import annotations`

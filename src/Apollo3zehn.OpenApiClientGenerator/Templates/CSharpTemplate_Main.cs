@@ -282,47 +282,48 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         IEnumerable<string> resourcePaths,
         Action<double>? onProgress = default)
     {
-        var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePaths.ToList());
+        var resourcePathList = resourcePaths.ToList();
+        var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePathList);
+        var session = V2.Data.RegisterBatchStream(new V2.BatchStreamRequest(begin, end, resourcePathList));
+        var responses = session.Channels
+            .Select(channel => (channel.ResourcePath, Response: V2.Data.GetBatchStreamChannel(session.SessionId, channel.ChannelId)))
+            .ToArray();
         var result = new Dictionary<string, DataResponse>();
-        var progress = 0.0;
+        var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
+        var consumedLength = 0L;
 
-        foreach (var (resourcePath, catalogItem) in catalogItemMap)
+        try
         {
-            using var responseMessage = V1.Data.GetStream(resourcePath, begin, end);
+            var readTasks = responses
+                .Select(current => Task.Run(() =>
+                {
+                    var values = ReadAsDoubleAsync(
+                        current.Response,
+                        useAsync: false,
+                        bytesRead =>
+                        {
+                            if (totalLength > 0)
+                                onProgress?.Invoke(System.Threading.Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
+                        })
+                        .GetAwaiter()
+                        .GetResult();
 
-            var doubleData = ReadAsDoubleAsync(responseMessage, useAsync: false)
-                .GetAwaiter()
-                .GetResult();
+                    return (current.ResourcePath, Values: values);
+                }))
+                .ToArray();
 
-            var resource = catalogItem.Resource;
+            Task.WaitAll(readTasks);
 
-            string? unit = default;
-
-            if (resource.Properties is not null &&
-                resource.Properties.TryGetValue("unit", out var unitElement) &&
-                unitElement.ValueKind == JsonValueKind.String)
-                unit = unitElement.GetString();
-
-            string? description = default;
-
-            if (resource.Properties is not null &&
-                resource.Properties.TryGetValue("description", out var descriptionElement) &&
-                descriptionElement.ValueKind == JsonValueKind.String)
-                description = descriptionElement.GetString();
-
-            var samplePeriod = catalogItem.Representation.SamplePeriod;
-
-            result[resourcePath] = new DataResponse(
-                CatalogItem: catalogItem,
-                Name: resource.Id,
-                Unit: unit,
-                Description: description,
-                SamplePeriod: samplePeriod,
-                Values: doubleData
-            );
-
-            progress += 1.0 / catalogItemMap.Count;
-            onProgress?.Invoke(progress);
+            foreach (var task in readTasks)
+            {
+                var (resourcePath, values) = task.Result;
+                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values);
+            }
+        }
+        finally
+        {
+            foreach (var (_, response) in responses)
+                response.Dispose();
         }
 
         return result;
@@ -343,49 +344,78 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         Action<double>? onProgress = default,
         CancellationToken cancellationToken = default)
     {
-        var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePaths.ToList()).ConfigureAwait(false);
+        var resourcePathList = resourcePaths.ToList();
+        var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePathList, cancellationToken).ConfigureAwait(false);
+        var session = await V2.Data.RegisterBatchStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList), cancellationToken).ConfigureAwait(false);
+        var responses = await Task.WhenAll(session.Channels
+            .Select(async channel => (channel.ResourcePath, Response: await V2.Data.GetBatchStreamChannelAsync(session.SessionId, channel.ChannelId, cancellationToken).ConfigureAwait(false))))
+            .ConfigureAwait(false);
         var result = new Dictionary<string, DataResponse>();
-        var progress = 0.0;
+        var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
+        var consumedLength = 0L;
 
-        foreach (var (resourcePath, catalogItem) in catalogItemMap)
+        try
         {
-            using var responseMessage = await V1.Data.GetStreamAsync(resourcePath, begin, end, cancellationToken).ConfigureAwait(false);
-            var doubleData = await ReadAsDoubleAsync(responseMessage, useAsync: true, cancellationToken).ConfigureAwait(false);
-            var resource = catalogItem.Resource;
+            var readTasks = responses
+                .Select(async current =>
+                {
+                    var values = await ReadAsDoubleAsync(
+                        current.Response,
+                        useAsync: true,
+                        bytesRead =>
+                        {
+                            if (totalLength > 0)
+                                onProgress?.Invoke(System.Threading.Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
+                        },
+                        cancellationToken).ConfigureAwait(false);
 
-            string? unit = default;
+                    return (current.ResourcePath, Values: values);
+                })
+                .ToArray();
 
-            if (resource.Properties is not null &&
-                resource.Properties.TryGetValue("unit", out var unitElement) &&
-                unitElement.ValueKind == JsonValueKind.String)
-                unit = unitElement.GetString();
+            var data = await Task.WhenAll(readTasks).ConfigureAwait(false);
 
-            string? description = default;
-
-            if (resource.Properties is not null &&
-                resource.Properties.TryGetValue("description", out var descriptionElement) &&
-                descriptionElement.ValueKind == JsonValueKind.String)
-                description = descriptionElement.GetString();
-
-            var samplePeriod = catalogItem.Representation.SamplePeriod;
-
-            result[resourcePath] = new DataResponse(
-                CatalogItem: catalogItem,
-                Name: resource.Id,
-                Unit: unit,
-                Description: description,
-                SamplePeriod: samplePeriod,
-                Values: doubleData
-            );
-
-            progress += 1.0 / catalogItemMap.Count;
-            onProgress?.Invoke(progress);
+            foreach (var (resourcePath, values) in data)
+                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values);
+        }
+        finally
+        {
+            foreach (var (_, response) in responses)
+                response.Dispose();
         }
 
         return result;
     }
 
-    private async Task<double[]> ReadAsDoubleAsync(HttpResponseMessage responseMessage, bool useAsync, CancellationToken cancellationToken = default)
+    private static DataResponse CreateDataResponse(string resourcePath, V1.CatalogItem catalogItem, double[] doubleData)
+    {
+        var resource = catalogItem.Resource;
+
+        string? unit = default;
+
+        if (resource.Properties is not null &&
+            resource.Properties.TryGetValue("unit", out var unitElement) &&
+            unitElement.ValueKind == JsonValueKind.String)
+            unit = unitElement.GetString();
+
+        string? description = default;
+
+        if (resource.Properties is not null &&
+            resource.Properties.TryGetValue("description", out var descriptionElement) &&
+            descriptionElement.ValueKind == JsonValueKind.String)
+            description = descriptionElement.GetString();
+
+        return new DataResponse(
+            CatalogItem: catalogItem,
+            Name: resource.Id,
+            Unit: unit,
+            Description: description,
+            SamplePeriod: catalogItem.Representation.SamplePeriod,
+            Values: doubleData
+        );
+    }
+
+    private async Task<double[]> ReadAsDoubleAsync(HttpResponseMessage responseMessage, bool useAsync, Action<long>? reportProgress = default, CancellationToken cancellationToken = default)
     {
         int? length = default;
 
@@ -420,6 +450,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
                 throw new Exception("The stream ended early.");
 
             remainingBuffer = remainingBuffer.Slice(bytesRead);
+            reportProgress?.Invoke(bytesRead);
         }
 
         return doubleBuffer;

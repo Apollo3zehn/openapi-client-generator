@@ -36,7 +36,7 @@ class {{{ClientName}}}{{{Async}}}Client:
             Args:
                 base_url: The base URL to use.
         """
-        return {{{ClientName}}}{{{Async}}}Client({{{Async}}}Client(base_url=base_url, timeout=60.0))
+        return {{{ClientName}}}{{{Async}}}Client({{{Async}}}Client(base_url=base_url, timeout=60.0, http2=True))
 
     def __init__(self, http_client: {{{Async}}}Client):
         """
@@ -112,7 +112,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         request = self._build_request_message(method, relative_url, content, content_type_value, accept_header_value)
 
         # send request
-        response = {{{Await}}}self.___http_client.send(request)
+        response = {{{Await}}}self.___http_client.send(request, stream=typeOfT is Response)
 
         # process response
         if not response.is_success:
@@ -184,19 +184,71 @@ class {{{ClientName}}}{{{Async}}}Client:
             onProgress: A callback which accepts the current progress.
         """
 
-        catalog_item_map = {{{Await}}}self.v1.catalogs.search_catalog_items(list(resource_paths))
+        resource_path_list = list(resource_paths)
+        catalog_item_map = {{{Await}}}self.v1.catalogs.search_catalog_items(resource_path_list)
+        session = {{{Await}}}self.v2.data.register_batch_stream(BatchStreamRequest(begin, end, resource_path_list))
         result: dict[str, DataResponse] = {}
-        progress: float = 0
+{{#Async}}
+        responses = await asyncio.gather(*[
+            self.v2.data.get_batch_stream_channel(session.session_id, channel.channel_id)
+            for channel in session.channels
+        ])
 
-        for (resource_path, catalog_item) in catalog_item_map.items():
+        response_entries = [
+            (channel.resource_path, response)
+            for (channel, response) in zip(session.channels, responses)
+        ]
+{{/Async}}
+{{^Async}}
+        responses = [
+            (channel.resource_path, self.v2.data.get_batch_stream_channel(session.session_id, channel.channel_id))
+            for channel in session.channels
+        ]
 
-            response = {{{Await}}}self.v1.data.get_stream(resource_path, begin, end)
+        response_entries = responses
+{{/Async}}
 
+        total_length = 0
+        for (_, response) in response_entries:
             try:
-                double_data = {{{Await}}}self._read_as_double(response)
+                total_length += int(response.headers["Content-Length"])
+            except:
+                pass
 
-            finally:
+{{#Async}}
+        consumed = 0
+
+        def report_progress(bytes_read):
+            nonlocal consumed
+            consumed += bytes_read
+            if total_length > 0 and on_progress is not None:
+                on_progress(consumed / total_length)
+
+        try:
+            values = await asyncio.gather(*[self._read_as_double(response, report_progress) for (_, response) in response_entries])
+{{/Async}}
+{{^Async}}
+        consumed = [0]
+        _lock = Lock()
+
+        def report_progress(bytes_read):
+            with _lock:
+                consumed[0] += bytes_read
+                if total_length > 0 and on_progress is not None:
+                    on_progress(consumed[0] / total_length)
+
+        try:
+            with ThreadPoolExecutor(max_workers=len(response_entries)) as executor:
+                values = list(executor.map(lambda entry: self._read_as_double(entry[1], report_progress), response_entries))
+{{/Async}}
+
+        finally:
+            for (_, response) in response_entries:
                 {{{Await}}}response.{{{Aclose}}}()
+
+        for ((resource_path, _), double_data) in zip(response_entries, values):
+
+            catalog_item = catalog_item_map[resource_path]
 
             resource = catalog_item.resource
 
@@ -219,16 +271,21 @@ class {{{ClientName}}}{{{Async}}}Client:
                 values=double_data
             )
 
-            progress = progress + 1.0 / len(catalog_item_map)
-
-            if on_progress is not None:
-                on_progress(progress)
+        if on_progress is not None:
+            on_progress(1)
                 
         return result
 
-    {{{Def}}} _read_as_double(self, response: Response):
+    {{{Def}}} _read_as_double(self, response: Response, report_progress: Optional[Callable[[int], None]] = None):
         
-        byteBuffer = {{{Await}}}response.{{{Read}}}()
+        chunks = []
+        
+        {{{For}}} data in response.{{{Aiter_bytes}}}():
+            chunks.append(data)
+            if report_progress is not None:
+                report_progress(len(data))
+        
+        byteBuffer = b"".join(chunks)
 
         if len(byteBuffer) % 8 != 0:
             raise Exception("The data length is invalid.")
