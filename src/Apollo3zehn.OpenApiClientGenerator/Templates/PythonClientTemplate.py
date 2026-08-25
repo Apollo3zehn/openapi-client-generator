@@ -17,10 +17,11 @@ from datetime import datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Callable
 {{/Special_NexusFeatures}}
-from typing import (Any, AsyncIterable, Callable, Iterable, Optional, Type,
+from typing import (Any, AsyncIterable, Callable, Iterable, NoReturn, Optional, Type,
                     TypeVar, Union, cast)
 {{#Special_NexusFeatures}}
 from zipfile import ZipFile
+from uuid import UUID
 {{/Special_NexusFeatures}}
 
 from httpx import AsyncClient, Client, Request, Response

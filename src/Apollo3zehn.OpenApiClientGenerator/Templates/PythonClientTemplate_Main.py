@@ -266,7 +266,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         if errors:
             {{{Await}}}self._create_channel_exception(session.session_id, errors[0][0], errors[0][1])
 
-        values = [val for (_, val, _) in results]
+        values = [cast(array[float], val) for (_, val, _) in results]
 
         for ((resource_path, _), double_data) in zip(response_entries, values):
 
@@ -316,7 +316,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         return doubleBuffer 
 
-    {{{Def}}} _create_channel_exception(self, session_id: UUID, resource_path: str, error: Exception) -> None:
+    {{{Def}}} _create_channel_exception(self, session_id: UUID, resource_path: str, error: Exception) -> NoReturn:
         try:
             status = {{{Await}}}self.v2.data.get_batch_stream_session_status(session_id)
         except:
