@@ -8,6 +8,7 @@ using System.Globalization;
 {{#Special_NexusFeatures}}
 using System.IO.Compression;
 {{/Special_NexusFeatures}}
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 {{#Special_NexusFeatures}}
@@ -164,14 +165,17 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         // process response
         if (!response.IsSuccessStatusCode)
         {
-            var message = new StreamReader(response.Content.ReadAsStream()).ReadToEnd();
-            var statusCode = $"{{{ExceptionCodePrefix}}}00.{(int)response.StatusCode}";
+            using (response)
+            {
+                var message = new StreamReader(response.Content.ReadAsStream()).ReadToEnd();
+                var statusCode = $"{{{ExceptionCodePrefix}}}00.{(int)response.StatusCode}";
 
-            if (string.IsNullOrWhiteSpace(message))
-                throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}.");
+                if (string.IsNullOrWhiteSpace(message))
+                    throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}.");
 
-            else
-                throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}. The response message is: {message}");
+                else
+                    throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}. The response message is: {message}");
+            }
         }
 
         try
@@ -218,14 +222,17 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         // process response
         if (!response.IsSuccessStatusCode)
         {
-            var message = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            var statusCode = $"{{{ExceptionCodePrefix}}}00.{(int)response.StatusCode}";
+            using (response)
+            {
+                var message = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var statusCode = $"{{{ExceptionCodePrefix}}}00.{(int)response.StatusCode}";
 
-            if (string.IsNullOrWhiteSpace(message))
-                throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}.");
+                if (string.IsNullOrWhiteSpace(message))
+                    throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}.");
 
-            else
-                throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}. The response message is: {message}");
+                else
+                    throw new {{{ExceptionType}}}(statusCode, $"The HTTP request failed with status code {response.StatusCode}. The response message is: {message}");
+            }
         }
 
         try
@@ -274,6 +281,14 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             Content = content
         };
 
+        if (relativeUrl.StartsWith("/api/v2/", StringComparison.Ordinal) ||
+            relativeUrl.Equals("/api/v2", StringComparison.Ordinal) ||
+            relativeUrl.StartsWith("/api/v2?", StringComparison.Ordinal))
+        {
+            requestMessage.Version = HttpVersion.Version20;
+            requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
+        }
+
         if (contentTypeHeaderValue is not null && requestMessage.Content is not null)
             requestMessage.Content.Headers.ContentType = MediaTypeWithQualityHeaderValue.Parse(contentTypeHeaderValue);
 
@@ -313,15 +328,16 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         var resourcePathList = resourcePaths.ToList();
         var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePathList);
         var session = V2.Data.RegisterBatchStream(new V2.BatchStreamRequest(begin, end, resourcePathList));
-        var responses = session.Channels
-            .Select(channel => (channel.ResourcePath, Response: V2.Data.GetBatchStreamChannel(session.SessionId, channel.ChannelId)))
-            .ToArray();
+        var responses = new List<(string ResourcePath, HttpResponseMessage Response)>();
         var result = new Dictionary<string, DataResponse>();
-        var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
-        var consumedLength = 0L;
 
         try
         {
+            foreach (var channel in session.Channels)
+                responses.Add((channel.ResourcePath, V2.Data.GetBatchStreamChannel(session.SessionId, channel.ChannelId)));
+
+            var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
+            var consumedLength = 0L;
             var readTasks = responses
                 .Select(current => Task.Run(() =>
                 {
@@ -392,15 +408,39 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         var resourcePathList = resourcePaths.ToList();
         var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePathList, cancellationToken).ConfigureAwait(false);
         var session = await V2.Data.RegisterBatchStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList), cancellationToken).ConfigureAwait(false);
-        var responses = await Task.WhenAll(session.Channels
-            .Select(async channel => (channel.ResourcePath, Response: await V2.Data.GetBatchStreamChannelAsync(session.SessionId, channel.ChannelId, cancellationToken).ConfigureAwait(false))))
-            .ConfigureAwait(false);
+        var responses = new List<(string ResourcePath, HttpResponseMessage Response)>();
         var result = new Dictionary<string, DataResponse>();
-        var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
-        var consumedLength = 0L;
 
         try
         {
+            var acquisitionTasks = session.Channels.Select(async channel =>
+            {
+                try
+                {
+                    var response = await V2.Data.GetBatchStreamChannelAsync(session.SessionId, channel.ChannelId, cancellationToken).ConfigureAwait(false);
+                    return (channel.ResourcePath, Response: response, Error: (Exception?)null);
+                }
+                catch (Exception ex)
+                {
+                    return (channel.ResourcePath, Response: (HttpResponseMessage?)null, Error: ex);
+                }
+            });
+
+            var acquisitionResults = await Task.WhenAll(acquisitionTasks).ConfigureAwait(false);
+
+            foreach (var acquisitionResult in acquisitionResults)
+            {
+                if (acquisitionResult.Response is not null)
+                    responses.Add((acquisitionResult.ResourcePath, acquisitionResult.Response));
+            }
+
+            var acquisitionError = acquisitionResults.FirstOrDefault(result => result.Error is not null).Error;
+
+            if (acquisitionError is not null)
+                throw acquisitionError;
+
+            var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
+            var consumedLength = 0L;
             var readTasks = responses
                 .Select(async current =>
                 {
@@ -513,22 +553,15 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 
     private async Task<double[]> ReadAsDoubleAsync(HttpResponseMessage responseMessage, bool useAsync, Action<long>? reportProgress = default, CancellationToken cancellationToken = default)
     {
-        int? length = default;
-
-        if (responseMessage.Content.Headers.TryGetValues("Content-Length", out var values) && 
-            values.Any() && 
-            int.TryParse(values.First(), out var contentLength))
-        {
-            length = contentLength;
-        }
+        var length = responseMessage.Content.Headers.ContentLength;
 
         if (!length.HasValue)
             throw new Exception("The data length is unknown.");
 
-        if (length.Value % 8 != 0)
+        if (length.Value < 0 || length.Value > int.MaxValue || length.Value % 8 != 0)
             throw new Exception("The data length is invalid.");
 
-        var elementCount = length.Value / 8;
+        var elementCount = (int)length.Value / 8;
         var doubleBuffer = new double[elementCount];
         var byteBuffer = new CastMemoryManager<double, byte>(doubleBuffer).Memory;
 
@@ -549,41 +582,10 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             reportProgress?.Invoke(bytesRead);
         }
 
-        return doubleBuffer;
-    }
+        var trailingByte = new byte[1];
 
-    private async Task<double[]> ReadAsDoubleAsync(HttpResponseMessage responseMessage, CancellationToken cancellationToken = default)
-    {
-        int? length = default;
-
-        if (responseMessage.Content.Headers.TryGetValues("Content-Length", out var values) && 
-            values.Any() && 
-            int.TryParse(values.First(), out var contentLength))
-        {
-            length = contentLength;
-        }
-
-        if (!length.HasValue)
-            throw new Exception("The data length is unknown.");
-
-        if (length.Value % 8 != 0)
-            throw new Exception("The data length is invalid.");
-
-        var elementCount = length.Value / 8;
-        var doubleBuffer = new double[elementCount];
-        var byteBuffer = new CastMemoryManager<double, byte>(doubleBuffer).Memory;
-        var stream = await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var remainingBuffer = byteBuffer;
-
-        while (!remainingBuffer.IsEmpty)
-        {
-            var bytesRead = await stream.ReadAsync(remainingBuffer, cancellationToken).ConfigureAwait(false);
-
-            if (bytesRead == 0)
-                throw new Exception("The stream ended early.");
-
-            remainingBuffer = remainingBuffer.Slice(bytesRead);
-        }
+        if (await stream.ReadAsync(trailingByte, cancellationToken).ConfigureAwait(false) != 0)
+            throw new Exception("The stream is longer than the declared data length.");
 
         return doubleBuffer;
     }

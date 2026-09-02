@@ -116,15 +116,18 @@ class {{{ClientName}}}{{{Async}}}Client:
 
         # process response
         if not response.is_success:
-            
-            message = response.text
-            status_code = f"{{{ExceptionCodePrefix}}}00.{response.status_code}"
+            try:
+                {{{Await}}}response.{{{Read}}}()
+                message = response.text
+                status_code = f"{{{ExceptionCodePrefix}}}00.{response.status_code}"
 
-            if not message:
-                raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}.")
+                if not message:
+                    raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}.")
 
-            else:
-                raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}. The response message is: {message}")
+                else:
+                    raise {{{ExceptionType}}}(status_code, f"The HTTP request failed with status code {response.status_code}. The response message is: {message}")
+            finally:
+                {{{Await}}}response.{{{Aclose}}}()
 
         try:
 
@@ -188,43 +191,46 @@ class {{{ClientName}}}{{{Async}}}Client:
         catalog_item_map = {{{Await}}}self.v1.catalogs.search_catalog_items(resource_path_list)
         session = {{{Await}}}self.v2.data.register_batch_stream(BatchStreamRequest(begin, end, resource_path_list))
         result: dict[str, DataResponse] = {}
-{{#Async}}
-        responses = await asyncio.gather(*[
-            self.v2.data.get_batch_stream_channel(session.session_id, channel.channel_id)
-            for channel in session.channels
-        ])
-
-        response_entries = [
-            (channel.resource_path, response)
-            for (channel, response) in zip(session.channels, responses)
-        ]
-{{/Async}}
-{{^Async}}
-        responses = [
-            (channel.resource_path, self.v2.data.get_batch_stream_channel(session.session_id, channel.channel_id))
-            for channel in session.channels
-        ]
-
-        response_entries = responses
-{{/Async}}
-
-        total_length = 0
-        for (_, response) in response_entries:
-            try:
-                total_length += int(response.headers["Content-Length"])
-            except:
-                pass
-
-{{#Async}}
-        consumed = 0
-
-        def report_progress(bytes_read):
-            nonlocal consumed
-            consumed += bytes_read
-            if total_length > 0 and on_progress is not None:
-                on_progress(consumed / total_length)
+        response_entries = []
 
         try:
+{{#Async}}
+            async def _open_channel(channel):
+                try:
+                    response = await self.v2.data.get_batch_stream_channel(session.session_id, channel.channel_id)
+                    response_entries.append((channel.resource_path, response))
+                    return None
+                except BaseException as ex:
+                    return ex
+
+            acquisition_results = await asyncio.gather(*[_open_channel(channel) for channel in session.channels])
+            acquisition_error = next((error for error in acquisition_results if error is not None), None)
+
+            if acquisition_error is not None:
+                raise acquisition_error
+{{/Async}}
+{{^Async}}
+            for channel in session.channels:
+                response = self.v2.data.get_batch_stream_channel(session.session_id, channel.channel_id)
+                response_entries.append((channel.resource_path, response))
+{{/Async}}
+
+            total_length = 0
+            for (_, response) in response_entries:
+                try:
+                    total_length += int(response.headers["Content-Length"])
+                except:
+                    pass
+
+{{#Async}}
+            consumed = 0
+
+            def report_progress(bytes_read):
+                nonlocal consumed
+                consumed += bytes_read
+                if total_length > 0 and on_progress is not None:
+                    on_progress(consumed / total_length)
+
             async def _read_channel(resource_path, response):
                 try:
                     values = await self._read_as_double(response, report_progress)
@@ -235,16 +241,15 @@ class {{{ClientName}}}{{{Async}}}Client:
             results = await asyncio.gather(*[_read_channel(rp, resp) for (rp, resp) in response_entries])
 {{/Async}}
 {{^Async}}
-        consumed = [0]
-        _lock = Lock()
+            consumed = [0]
+            _lock = Lock()
 
-        def report_progress(bytes_read):
-            with _lock:
-                consumed[0] += bytes_read
-                if total_length > 0 and on_progress is not None:
-                    on_progress(consumed[0] / total_length)
+            def report_progress(bytes_read):
+                with _lock:
+                    consumed[0] += bytes_read
+                    if total_length > 0 and on_progress is not None:
+                        on_progress(consumed[0] / total_length)
 
-        try:
             def _read_channel(entry):
                 resource_path, response = entry
                 try:
@@ -299,7 +304,19 @@ class {{{ClientName}}}{{{Async}}}Client:
         return result
 
     {{{Def}}} _read_as_double(self, response: Response, report_progress: Optional[Callable[[int], None]] = None):
-        
+        content_length_value = response.headers.get("Content-Length")
+
+        if content_length_value is None:
+            raise Exception("The data length is unknown.")
+
+        if not content_length_value.isascii() or not content_length_value.isdigit():
+            raise Exception("The data length is invalid.")
+
+        content_length = int(content_length_value)
+
+        if content_length < 0 or content_length % 8 != 0:
+            raise Exception("The data length is invalid.")
+
         chunks = []
         
         {{{For}}} data in response.{{{Aiter_bytes}}}():
@@ -309,8 +326,8 @@ class {{{ClientName}}}{{{Async}}}Client:
         
         byteBuffer = b"".join(chunks)
 
-        if len(byteBuffer) % 8 != 0:
-            raise Exception("The data length is invalid.")
+        if len(byteBuffer) != content_length:
+            raise Exception("The data length does not match Content-Length.")
 
         doubleBuffer = array("d", byteBuffer)
 

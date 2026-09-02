@@ -1,4 +1,5 @@
 ﻿using Apollo3zehn.OpenApiClientGenerator;
+using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers;
 using Xunit;
 
@@ -6,6 +7,56 @@ namespace DataSource;
 
 public class GeneratorTests
 {
+    [Fact]
+    public void GeneratesTransportAndCleanupSafeguards()
+    {
+        var targetFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var settings = new GeneratorSettings(
+            Namespace: "Nexus.Api",
+            ClientName: "Nexus",
+            ExceptionType: "NexusException",
+            ExceptionCodePrefix: "N",
+            GetOperationName: (_, _, _) => "Operation",
+            Special_ConfigurationHeaderKey: "Nexus-Configuration",
+            Special_WebAssemblySupport: true,
+            Special_AccessTokenSupport: false,
+            Special_NexusFeatures: true);
+
+        try
+        {
+            var documents = new[] { CreateDocument("v1"), CreateDocument("v2") };
+            new CSharpGenerator(settings).Generate(targetFolderPath, documents);
+            new PythonGenerator(settings).Generate(targetFolderPath, documents);
+
+            var csharp = File.ReadAllText(Path.Combine(targetFolderPath, "NexusClient.g.cs"));
+            var clientInterface = csharp[..csharp.IndexOf("public class NexusClient", StringComparison.Ordinal)];
+
+            Assert.Contains("if (relativeUrl.StartsWith(\"/api/v2/\", StringComparison.Ordinal)", csharp);
+            Assert.Contains("requestMessage.Version = HttpVersion.Version20;", csharp);
+            Assert.Contains("requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;", csharp);
+            Assert.DoesNotContain("Content = content,\n            Version = HttpVersion.Version20", csharp);
+            Assert.Contains("requestMessage.Options.Set(WebAssemblyEnableStreamingResponseKey, true);", csharp);
+            Assert.Contains("using (response)", csharp);
+            Assert.Contains("var responses = new List<(string ResourcePath, HttpResponseMessage Response)>();", csharp);
+            Assert.Contains("Load(", clientInterface);
+            Assert.DoesNotContain("public interface INexusClient : IDisposable", clientInterface);
+            Assert.Equal(1, csharp.Split("ReadAsDoubleAsync(HttpResponseMessage", StringSplitOptions.None).Length - 1);
+
+            var python = File.ReadAllText(Path.Combine(targetFolderPath, "_client.py"));
+
+            Assert.Contains("response.read()", python);
+            Assert.Contains("await response.aread()", python);
+            Assert.Contains("acquisition_results = await asyncio.gather", python);
+            Assert.Contains("not content_length_value.isascii() or not content_length_value.isdigit()", python);
+            Assert.Contains("if len(byteBuffer) != content_length:", python);
+        }
+        finally
+        {
+            if (Directory.Exists(targetFolderPath))
+                Directory.Delete(targetFolderPath, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Test()
     {
@@ -84,5 +135,15 @@ public class GeneratorTests
         // generate python client
         var pythonGenerator = new PythonGenerator(settings);
         pythonGenerator.Generate(".", document_v1, document_v2);
+    }
+
+    private static OpenApiDocument CreateDocument(string version)
+    {
+        return new OpenApiDocument
+        {
+            Info = new OpenApiInfo { Version = version },
+            Paths = new OpenApiPaths(),
+            Components = new OpenApiComponents()
+        };
     }
 }
