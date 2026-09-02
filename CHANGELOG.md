@@ -1,3 +1,7 @@
+## v1.0.0-beta.24 - 2026-09-02
+
+- Fix concurrent streaming client generation
+
 ## v1.0.0-beta.23 - 2026-08-25
 
 - Fix pyright errors in generated Python client: add missing `UUID` import, annotate `_create_channel_exception` return type as `NoReturn`, cast `values` to `array[float]`
