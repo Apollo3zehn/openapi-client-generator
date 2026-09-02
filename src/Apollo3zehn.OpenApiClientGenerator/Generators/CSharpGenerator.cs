@@ -236,7 +236,7 @@ public interface I{augmentedClassName}
 
             foreach (var operation in entry.Value.Operations)
             {
-                var response = operation.Value.Responses.First();
+                var response = GetSuccessResponse(entry.Key, operation.Value);
 
                 if (response.Value.Content.Count == 0)
                 {
@@ -329,7 +329,7 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
 
             foreach (var operation in entry.Value.Operations)
             {
-                var response = operation.Value.Responses.First();
+                var response = GetSuccessResponse(entry.Key, operation.Value);
 
                 if (response.Value.Content.Count == 0)
                 {
@@ -720,6 +720,13 @@ $@"    /// <summary>
         return modelName;
     }
 
+    private static KeyValuePair<string, OpenApiResponse> GetSuccessResponse(string path, OpenApiOperation operation)
+    {
+        return operation.Responses.FirstOrDefault(response => response.Key is "200" or "201") is var response && response.Value is not null
+            ? response
+            : throw new Exception($"Operation '{operation.OperationId}' at '{path}' requires response type '200' or '201'.");
+    }
+
     private string GetMethodSignature(
         string path,
         string methodSuffix,
@@ -827,12 +834,12 @@ $@"    /// <summary>
         }
     }
 
-    private static string? GetFirstLine(string? value)
+    private static string GetFirstLine(string? value)
     {
-        if (value is null)
-            return null;
+        if (string.IsNullOrWhiteSpace(value))
+            return "No description provided.";
 
         using var reader = new StringReader(value);
-        return reader.ReadLine();
+        return reader.ReadLine()!;
     }
 }

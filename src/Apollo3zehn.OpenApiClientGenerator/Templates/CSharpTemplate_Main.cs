@@ -286,7 +286,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             relativeUrl.StartsWith("/api/v2?", StringComparison.Ordinal))
         {
             requestMessage.Version = HttpVersion.Version20;
-            requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
+            requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
         }
 
         if (contentTypeHeaderValue is not null && requestMessage.Content is not null)
@@ -326,68 +326,45 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         Action<double>? onProgress = default)
     {
         var resourcePathList = resourcePaths.ToList();
+
+        if (resourcePathList.Count == 0)
+            return new Dictionary<string, DataResponse>();
+
         var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePathList);
         var session = V2.Data.RegisterBatchStream(new V2.BatchStreamRequest(begin, end, resourcePathList));
-        var responses = new List<(string ResourcePath, HttpResponseMessage Response)>();
-        var result = new Dictionary<string, DataResponse>();
-
-        try
+        var totalLength = GetTotalLength(begin, end, resourcePathList, catalogItemMap);
+        var consumedLength = 0L;
+        var tasks = session.Channels.Select(channel => Task.Run(() =>
         {
-            foreach (var channel in session.Channels)
-                responses.Add((channel.ResourcePath, V2.Data.GetBatchStreamChannel(session.SessionId, channel.ChannelId)));
-
-            var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
-            var consumedLength = 0L;
-            var readTasks = responses
-                .Select(current => Task.Run(() =>
-                {
-                    try
-                    {
-                        var values = ReadAsDoubleAsync(
-                            current.Response,
-                            useAsync: false,
-                            bytesRead =>
-                            {
-                                if (totalLength > 0)
-                                    onProgress?.Invoke(Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
-                            })
-                            .GetAwaiter()
-                            .GetResult();
-
-                        return (current.ResourcePath, Values: values, Error: (Exception?)null);
-                    }
-                    catch (Exception ex)
-                    {
-                        return (current.ResourcePath, Values: (double[]?)null, Error: ex);
-                    }
-                }))
-                .ToArray();
-
-            Task.WaitAll(readTasks);
-
-            var errors = readTasks
-                .Where(task => task.Result.Error is not null)
-                .Select(task => task.Result)
-                .ToList();
-
-            if (errors.Count > 0)
+            try
             {
-                throw CreateChannelExceptionAsync(session.SessionId, errors[0].ResourcePath, errors[0].Error!, CancellationToken.None).GetAwaiter().GetResult();
+                using var response = V2.Data.GetBatchStreamChannel(session.SessionId, channel.ChannelId);
+                var values = ReadAsDoubleAsync(response, useAsync: false, ReportProgress).GetAwaiter().GetResult();
+                return (channel.ResourcePath, Values: values, Error: (Exception?)null);
             }
-
-            foreach (var task in readTasks)
+            catch (Exception ex)
             {
-                var (resourcePath, values, _) = task.Result;
-                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values!);
+                return (channel.ResourcePath, Values: (double[]?)null, Error: ex);
             }
-        }
-        finally
+        })).ToArray();
+
+        Task.WaitAll(tasks);
+        var data = tasks.Select(task => task.Result).ToArray();
+        var error = data.FirstOrDefault(item => item.Error is not null);
+
+        if (error.Error is not null)
+            throw CreateChannelExceptionAsync(session.SessionId, error.ResourcePath, error.Error, CancellationToken.None).GetAwaiter().GetResult();
+
+        onProgress?.Invoke(1);
+        return data.ToDictionary(
+            item => item.ResourcePath,
+            item => CreateDataResponse(item.ResourcePath, catalogItemMap[item.ResourcePath], item.Values!));
+
+        void ReportProgress(long bytesRead)
         {
-            foreach (var (_, response) in responses)
-                response.Dispose();
+            if (totalLength > 0)
+                onProgress?.Invoke(Math.Min(1, Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength));
         }
-
-        return result;
     }
 
     /// <summary>
@@ -406,86 +383,56 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         CancellationToken cancellationToken = default)
     {
         var resourcePathList = resourcePaths.ToList();
+
+        if (resourcePathList.Count == 0)
+            return new Dictionary<string, DataResponse>();
+
         var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePathList, cancellationToken).ConfigureAwait(false);
         var session = await V2.Data.RegisterBatchStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList), cancellationToken).ConfigureAwait(false);
-        var responses = new List<(string ResourcePath, HttpResponseMessage Response)>();
-        var result = new Dictionary<string, DataResponse>();
-
-        try
+        var totalLength = GetTotalLength(begin, end, resourcePathList, catalogItemMap);
+        var consumedLength = 0L;
+        var tasks = session.Channels.Select(async channel =>
         {
-            var acquisitionTasks = session.Channels.Select(async channel =>
+            try
             {
-                try
-                {
-                    var response = await V2.Data.GetBatchStreamChannelAsync(session.SessionId, channel.ChannelId, cancellationToken).ConfigureAwait(false);
-                    return (channel.ResourcePath, Response: response, Error: (Exception?)null);
-                }
-                catch (Exception ex)
-                {
-                    return (channel.ResourcePath, Response: (HttpResponseMessage?)null, Error: ex);
-                }
-            });
-
-            var acquisitionResults = await Task.WhenAll(acquisitionTasks).ConfigureAwait(false);
-
-            foreach (var acquisitionResult in acquisitionResults)
-            {
-                if (acquisitionResult.Response is not null)
-                    responses.Add((acquisitionResult.ResourcePath, acquisitionResult.Response));
+                using var response = await V2.Data.GetBatchStreamChannelAsync(session.SessionId, channel.ChannelId, cancellationToken).ConfigureAwait(false);
+                var values = await ReadAsDoubleAsync(response, useAsync: true, ReportProgress, cancellationToken).ConfigureAwait(false);
+                return (channel.ResourcePath, Values: values, Error: (Exception?)null);
             }
-
-            var acquisitionError = acquisitionResults.FirstOrDefault(result => result.Error is not null).Error;
-
-            if (acquisitionError is not null)
-                throw acquisitionError;
-
-            var totalLength = responses.Sum(current => current.Response.Content.Headers.ContentLength ?? 0);
-            var consumedLength = 0L;
-            var readTasks = responses
-                .Select(async current =>
-                {
-                    try
-                    {
-                        var values = await ReadAsDoubleAsync(
-                            current.Response,
-                            useAsync: true,
-                            bytesRead =>
-                            {
-                                if (totalLength > 0)
-                                    onProgress?.Invoke(Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength);
-                            },
-                            cancellationToken).ConfigureAwait(false);
-
-                        return (current.ResourcePath, Values: values, Error: (Exception?)null);
-                    }
-                    catch (Exception ex)
-                    {
-                        return (current.ResourcePath, Values: (double[]?)null, Error: ex);
-                    }
-                })
-                .ToArray();
-
-            var data = await Task.WhenAll(readTasks).ConfigureAwait(false);
-
-            var errors = data
-                .Where(item => item.Error is not null)
-                .ToList();
-
-            if (errors.Count > 0)
+            catch (Exception ex)
             {
-                throw await CreateChannelExceptionAsync(session.SessionId, errors[0].ResourcePath, errors[0].Error!, cancellationToken).ConfigureAwait(false);
+                return (channel.ResourcePath, Values: (double[]?)null, Error: ex);
             }
+        }).ToArray();
 
-            foreach (var (resourcePath, values, _) in data)
-                result[resourcePath] = CreateDataResponse(resourcePath, catalogItemMap[resourcePath], values!);
-        }
-        finally
+        var data = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var error = data.FirstOrDefault(item => item.Error is not null);
+
+        if (error.Error is not null)
+            throw await CreateChannelExceptionAsync(session.SessionId, error.ResourcePath, error.Error, cancellationToken).ConfigureAwait(false);
+
+        onProgress?.Invoke(1);
+        return data.ToDictionary(
+            item => item.ResourcePath,
+            item => CreateDataResponse(item.ResourcePath, catalogItemMap[item.ResourcePath], item.Values!));
+
+        void ReportProgress(long bytesRead)
         {
-            foreach (var (_, response) in responses)
-                response.Dispose();
+            if (totalLength > 0)
+                onProgress?.Invoke(Math.Min(1, Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength));
         }
+    }
 
-        return result;
+    private static long GetTotalLength(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        IReadOnlyDictionary<string, V1.CatalogItem> catalogItemMap)
+    {
+        return resourcePaths.Sum(resourcePath => checked(
+            (end - begin).Ticks /
+            catalogItemMap[resourcePath].Representation.SamplePeriod.Ticks *
+            sizeof(double)));
     }
 
     private static DataResponse CreateDataResponse(string resourcePath, V1.CatalogItem catalogItem, double[] doubleData)

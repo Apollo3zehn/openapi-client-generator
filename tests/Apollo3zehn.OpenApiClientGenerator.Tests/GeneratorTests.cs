@@ -33,11 +33,12 @@ public class GeneratorTests
 
             Assert.Contains("if (relativeUrl.StartsWith(\"/api/v2/\", StringComparison.Ordinal)", csharp);
             Assert.Contains("requestMessage.Version = HttpVersion.Version20;", csharp);
-            Assert.Contains("requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;", csharp);
+            Assert.Contains("requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionExact;", csharp);
             Assert.DoesNotContain("Content = content,\n            Version = HttpVersion.Version20", csharp);
             Assert.Contains("requestMessage.Options.Set(WebAssemblyEnableStreamingResponseKey, true);", csharp);
             Assert.Contains("using (response)", csharp);
-            Assert.Contains("var responses = new List<(string ResourcePath, HttpResponseMessage Response)>();", csharp);
+            Assert.Contains("using var response = V2.Data.GetBatchStreamChannel", csharp);
+            Assert.Contains("if (resourcePathList.Count == 0)", csharp);
             Assert.Contains("Load(", clientInterface);
             Assert.DoesNotContain("public interface INexusClient : IDisposable", clientInterface);
             Assert.Equal(1, csharp.Split("ReadAsDoubleAsync(HttpResponseMessage", StringSplitOptions.None).Length - 1);
@@ -46,9 +47,57 @@ public class GeneratorTests
 
             Assert.Contains("response.read()", python);
             Assert.Contains("await response.aread()", python);
-            Assert.Contains("acquisition_results = await asyncio.gather", python);
+            Assert.DoesNotContain("acquisition_results = await asyncio.gather", python);
+            Assert.Contains("if self.___http_client.base_url.scheme != \"https\":", python);
+            Assert.Contains("bytearray(content_length)", python);
             Assert.Contains("not content_length_value.isascii() or not content_length_value.isdigit()", python);
-            Assert.Contains("if len(byteBuffer) != content_length:", python);
+            Assert.Contains("if offset != content_length:", python);
+        }
+        finally
+        {
+            if (Directory.Exists(targetFolderPath))
+                Directory.Delete(targetFolderPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IgnoresDocumentedErrorResponsesWhenGeneratingMethods()
+    {
+        var targetFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var settings = new GeneratorSettings(
+            Namespace: "Test.Api",
+            ClientName: "Test",
+            ExceptionType: "TestException",
+            ExceptionCodePrefix: "T",
+            GetOperationName: (_, _, _) => "GetValue",
+            Special_ConfigurationHeaderKey: default!,
+            Special_WebAssemblySupport: false,
+            Special_AccessTokenSupport: false,
+            Special_NexusFeatures: false);
+        var document = CreateDocument("v1");
+        document.Paths.Add("/value", new OpenApiPathItem
+        {
+            Operations =
+            {
+                [OperationType.Get] = new OpenApiOperation
+                {
+                    Tags = [new OpenApiTag { Name = "Values" }],
+                    Responses = new OpenApiResponses
+                    {
+                        ["404"] = new OpenApiResponse { Description = "Not found" },
+                        ["200"] = new OpenApiResponse { Description = "Success" }
+                    }
+                }
+            }
+        });
+
+        try
+        {
+            new CSharpGenerator(settings).Generate(targetFolderPath, document);
+            new PythonGenerator(settings).Generate(targetFolderPath, document);
+
+            Assert.Contains("void GetValue()", File.ReadAllText(Path.Combine(targetFolderPath, "TestClient.g.cs")));
+            Assert.Contains("def get_value(self)", File.ReadAllText(Path.Combine(targetFolderPath, "V1.py")));
         }
         finally
         {
