@@ -1,6 +1,6 @@
 ## v1.0.0-beta.24 - 2026-09-02
 
-- Fix concurrent streaming client generation
+- Generate Nexus batch stream clients for the single framed response format
 
 ## v1.0.0-beta.23 - 2026-08-25
 

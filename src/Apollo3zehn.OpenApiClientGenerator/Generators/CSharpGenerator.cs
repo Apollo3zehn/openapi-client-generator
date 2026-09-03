@@ -425,7 +425,7 @@ $@"public class {augmentedClassName} : I{augmentedClassName}
 
         sourceTextBuilder.AppendLine(
 $@"    /// <summary>
-    /// {GetFirstLine(operation.Summary)}
+    ///{FormatXmlDocText(operation.Summary)}
     /// </summary>");
 
         foreach (var parameter in parameters)
@@ -579,13 +579,13 @@ $@"    /// <summary>
                 .OfType<OpenApiString>()
                 .Select(current =>
 $@"    /// <summary>
-    /// {GetFirstLine(current.Value)}
+    ///{FormatXmlDocText(current.Value)}
     /// </summary>
     {current.Value}"));
 
             sourceTextBuilder.AppendLine(
 @$"/// <summary>
-/// {GetFirstLine(schema.Description)}
+///{FormatXmlDocText(schema.Description)}
 /// </summary>");
 
             sourceTextBuilder.AppendLine(
@@ -605,7 +605,7 @@ $@"    /// <summary>
 
             sourceTextBuilder.AppendLine(
 @$"/// <summary>
-/// {GetFirstLine(schema.Description)}
+///{FormatXmlDocText(schema.Description)}
 /// </summary>");
 
             if (schema.Properties is not null)
@@ -834,10 +834,16 @@ $@"    /// <summary>
         }
     }
 
-    private static string GetFirstLine(string? value)
+    private static string FormatXmlDocText(string? value)
+    {
+        var firstLine = GetFirstLine(value);
+        return firstLine is null ? string.Empty : $" {firstLine}";
+    }
+
+    private static string? GetFirstLine(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
-            return "No description provided.";
+            return default;
 
         using var reader = new StringReader(value);
         return reader.ReadLine()!;

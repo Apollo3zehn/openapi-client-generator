@@ -1,13 +1,11 @@
 ﻿from __future__ import annotations
 
 {{#Special_NexusFeatures}}
-import asyncio
 import base64
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
 {{/Special_NexusFeatures}}
 import json
 {{#Special_NexusFeatures}}
+import struct
 import time
 from array import array
 {{/Special_NexusFeatures}}
@@ -15,9 +13,8 @@ from dataclasses import dataclass
 {{#Special_NexusFeatures}}
 from datetime import datetime, timedelta
 from tempfile import NamedTemporaryFile
-from typing import Callable
 {{/Special_NexusFeatures}}
-from typing import (Any, AsyncIterable, Callable, Iterable, NoReturn, Optional, Type,
+from typing import (Any, AsyncIterable, Callable, Iterable, Optional, Type,
                     TypeVar, Union, cast)
 {{#Special_NexusFeatures}}
 from zipfile import ZipFile
