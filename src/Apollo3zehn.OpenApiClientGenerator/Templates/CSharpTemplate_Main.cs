@@ -469,9 +469,10 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             if (offsets[resourceIndex] > expectedLengths[resourceIndex] - payloadLength)
                 throw new Exception("The batch stream contains more data than expected.");
 
-            var target = new CastMemoryManager<double, byte>(values[resourceIndex]).Memory
-                .Slice(offsets[resourceIndex], payloadLength);
+            using var manager = new DoubleToByteMemoryManager(values[resourceIndex]);
+            var target = manager.Memory.Slice(offsets[resourceIndex], payloadLength);
             await ReadExactlyAsync(target).ConfigureAwait(false);
+
             offsets[resourceIndex] += payloadLength;
             reportProgress?.Invoke(payloadLength);
         }
@@ -779,24 +780,33 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 }
 
 {{#Special_NexusFeatures}}
-internal class CastMemoryManager<TFrom, TTo> : MemoryManager<TTo>
-     where TFrom : struct
-     where TTo : struct
+internal sealed class DoubleToByteMemoryManager : MemoryManager<byte>
 {
-    private readonly Memory<TFrom> _from;
+    private readonly double[] _values;
 
-    public CastMemoryManager(Memory<TFrom> from) => _from = from;
+    public DoubleToByteMemoryManager(double[] values) => _values = values;
 
-    public override Span<TTo> GetSpan() => MemoryMarshal.Cast<TFrom, TTo>(_from.Span);
+    public override Span<byte> GetSpan() => MemoryMarshal.AsBytes(_values.AsSpan());
 
     protected override void Dispose(bool disposing)
     {
         //
     }
 
-    public override MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+    public override unsafe MemoryHandle Pin(int elementIndex = 0)
+    {
+        if ((uint)elementIndex > (uint)(_values.Length * sizeof(double)))
+            throw new ArgumentOutOfRangeException(nameof(elementIndex));
 
-    public override void Unpin() => throw new NotSupportedException();
+        var handle = GCHandle.Alloc(_values, GCHandleType.Pinned);
+        var pointer = (byte*)handle.AddrOfPinnedObject() + elementIndex;
+
+        return new MemoryHandle(pointer, handle);
+    }
+
+    public override void Unpin()
+    {
+    }
 }
 {{/Special_NexusFeatures}}
 

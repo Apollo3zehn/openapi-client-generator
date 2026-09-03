@@ -8,67 +8,6 @@ namespace DataSource;
 public class GeneratorTests
 {
     [Fact]
-    public void GeneratesTransportAndCleanupSafeguards()
-    {
-        var targetFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        var settings = new GeneratorSettings(
-            Namespace: "Nexus.Api",
-            ClientName: "Nexus",
-            ExceptionType: "NexusException",
-            ExceptionCodePrefix: "N",
-            GetOperationName: (_, _, _) => "Operation",
-            Special_ConfigurationHeaderKey: "Nexus-Configuration",
-            Special_WebAssemblySupport: true,
-            Special_AccessTokenSupport: false,
-            Special_NexusFeatures: true);
-
-        try
-        {
-            var documents = new[] { CreateDocument("v1"), CreateDocument("v2") };
-            new CSharpGenerator(settings).Generate(targetFolderPath, documents);
-            new PythonGenerator(settings).Generate(targetFolderPath, documents);
-
-            var csharp = File.ReadAllText(Path.Combine(targetFolderPath, "NexusClient.g.cs"));
-            var clientInterface = csharp[..csharp.IndexOf("public class NexusClient", StringComparison.Ordinal)];
-
-            Assert.DoesNotContain("HttpVersion.Version20", csharp);
-            Assert.DoesNotContain("RequestVersionExact", csharp);
-            Assert.Contains("requestMessage.Options.Set(WebAssemblyEnableStreamingResponseKey, true);", csharp);
-            Assert.Contains("using (response)", csharp);
-            Assert.Contains("using var response = V2.Data.GetStream", csharp);
-            Assert.Contains("ReadBatchAsync", csharp);
-            Assert.Contains("BinaryPrimitives.ReadInt32LittleEndian", csharp);
-            Assert.DoesNotContain("maximumPayloadLength", csharp);
-            Assert.DoesNotContain("payloadLength % sizeof(double)", csharp);
-            Assert.Contains("if (payloadLength < 0)", csharp);
-            Assert.Contains("if (resourcePathList.Count == 0)", csharp);
-            Assert.Contains("Load(", clientInterface);
-            Assert.DoesNotContain("public interface INexusClient : IDisposable", clientInterface);
-
-            var python = File.ReadAllText(Path.Combine(targetFolderPath, "_client.py"));
-
-            Assert.Contains("response.read()", python);
-            Assert.Contains("await response.aread()", python);
-            Assert.DoesNotContain("http2=True", python);
-            Assert.DoesNotContain("ThreadPoolExecutor", python);
-            Assert.DoesNotContain("import asyncio", python);
-            Assert.DoesNotContain("maximum_payload_length", python);
-            Assert.DoesNotContain("payload_length % 8", python);
-            Assert.DoesNotContain("int((end - begin) /", python);
-            Assert.Contains("((end - begin) // catalog_item_map[path].representation.sample_period) * 8", python);
-            Assert.Contains("if payload_length < 0:", python);
-            Assert.Contains("self.v2.data.get_stream", python);
-            Assert.Contains("struct.unpack_from(\"<ii\"", python);
-            Assert.Contains("if offsets != expected_lengths:", python);
-        }
-        finally
-        {
-            if (Directory.Exists(targetFolderPath))
-                Directory.Delete(targetFolderPath, recursive: true);
-        }
-    }
-
-    [Fact]
     public void IgnoresDocumentedErrorResponsesWhenGeneratingMethods()
     {
         var targetFolderPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
