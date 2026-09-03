@@ -81,7 +81,7 @@ public class PythonGenerator
                 versioningImportsBuilder.AppendLine($"from .{version} import CatalogItem, ExportParameters, TaskStatus");
 
             if (_settings.Special_NexusFeatures && version == "V2")
-                versioningImportsBuilder.AppendLine($"from .{version} import BatchStreamRequest, BatchStreamSessionState");
+                versioningImportsBuilder.AppendLine($"from .{version} import BatchStreamRequest");
 
             versioningFieldsBuilder.AppendLine($"    _{Shared.FirstCharToLower(version)}: {version}{{{{AsyncPlaceholder}}}}");
 
@@ -472,14 +472,14 @@ $@"class {augmentedClassName}:
         sourceTextBuilder.AppendLine(
 @$"    def {signature} -> {actualActualReturnType}:
         """"""
-        {GetFirstLine(operation.Summary)}
+{FormatPythonDocText("        ", operation.Summary)}
 
         Args:");
 
         foreach (var parameter in parameters)
         {
             var parameterName = parameter.Item1.Split(":")[0];
-            sourceTextBuilder.AppendLine($"            {parameterName}: {GetFirstLine(parameter.Item2.Description)}");
+            sourceTextBuilder.AppendLine(FormatPythonParamDoc($"            {parameterName}", parameter.Item2.Description));
         }
 
         sourceTextBuilder.AppendLine(@"        """"""
@@ -601,7 +601,7 @@ class {modelName}:");
 
             sourceTextBuilder.AppendLine(
 @$"    """"""
-    {GetFirstLine(schema.Description)}
+{FormatPythonDocText("    ", schema.Description)}
 
     Args:");
 
@@ -609,7 +609,7 @@ class {modelName}:");
             {
                 foreach (var property in schema.Properties)
                 {
-                    sourceTextBuilder.AppendLine($"        {Shared.ToSnakeCase(property.Key)}: {GetFirstLine(property.Value.Description)}");
+                    sourceTextBuilder.AppendLine(FormatPythonParamDoc($"        {Shared.ToSnakeCase(property.Key)}", property.Value.Description));
                 }
             }
 
@@ -811,10 +811,22 @@ $@"    {propertyName}: {type}
         }
     }
 
-    private static string GetFirstLine(string? value)
+    private static string FormatPythonDocText(string indentation, string? value)
+    {
+        var firstLine = GetFirstLine(value);
+        return firstLine is null ? string.Empty : $"{indentation}{firstLine}";
+    }
+
+    private static string FormatPythonParamDoc(string name, string? value)
+    {
+        var firstLine = GetFirstLine(value);
+        return firstLine is null ? $"{name}:" : $"{name}: {firstLine}";
+    }
+
+    private static string? GetFirstLine(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
-            return "No description provided.";
+            return default;
 
         using var reader = new StringReader(value);
         return reader.ReadLine()!;

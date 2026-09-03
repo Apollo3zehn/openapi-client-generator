@@ -31,27 +31,35 @@ public class GeneratorTests
             var csharp = File.ReadAllText(Path.Combine(targetFolderPath, "NexusClient.g.cs"));
             var clientInterface = csharp[..csharp.IndexOf("public class NexusClient", StringComparison.Ordinal)];
 
-            Assert.Contains("if (relativeUrl.StartsWith(\"/api/v2/\", StringComparison.Ordinal)", csharp);
-            Assert.Contains("requestMessage.Version = HttpVersion.Version20;", csharp);
-            Assert.Contains("requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionExact;", csharp);
-            Assert.DoesNotContain("Content = content,\n            Version = HttpVersion.Version20", csharp);
+            Assert.DoesNotContain("HttpVersion.Version20", csharp);
+            Assert.DoesNotContain("RequestVersionExact", csharp);
             Assert.Contains("requestMessage.Options.Set(WebAssemblyEnableStreamingResponseKey, true);", csharp);
             Assert.Contains("using (response)", csharp);
-            Assert.Contains("using var response = V2.Data.GetBatchStreamChannel", csharp);
+            Assert.Contains("using var response = V2.Data.GetStream", csharp);
+            Assert.Contains("ReadBatchAsync", csharp);
+            Assert.Contains("BinaryPrimitives.ReadInt32LittleEndian", csharp);
+            Assert.DoesNotContain("maximumPayloadLength", csharp);
+            Assert.DoesNotContain("payloadLength % sizeof(double)", csharp);
+            Assert.Contains("if (payloadLength < 0)", csharp);
             Assert.Contains("if (resourcePathList.Count == 0)", csharp);
             Assert.Contains("Load(", clientInterface);
             Assert.DoesNotContain("public interface INexusClient : IDisposable", clientInterface);
-            Assert.Equal(1, csharp.Split("ReadAsDoubleAsync(HttpResponseMessage", StringSplitOptions.None).Length - 1);
 
             var python = File.ReadAllText(Path.Combine(targetFolderPath, "_client.py"));
 
             Assert.Contains("response.read()", python);
             Assert.Contains("await response.aread()", python);
-            Assert.DoesNotContain("acquisition_results = await asyncio.gather", python);
-            Assert.Contains("if self.___http_client.base_url.scheme != \"https\":", python);
-            Assert.Contains("bytearray(content_length)", python);
-            Assert.Contains("not content_length_value.isascii() or not content_length_value.isdigit()", python);
-            Assert.Contains("if offset != content_length:", python);
+            Assert.DoesNotContain("http2=True", python);
+            Assert.DoesNotContain("ThreadPoolExecutor", python);
+            Assert.DoesNotContain("import asyncio", python);
+            Assert.DoesNotContain("maximum_payload_length", python);
+            Assert.DoesNotContain("payload_length % 8", python);
+            Assert.DoesNotContain("int((end - begin) /", python);
+            Assert.Contains("((end - begin) // catalog_item_map[path].representation.sample_period) * 8", python);
+            Assert.Contains("if payload_length < 0:", python);
+            Assert.Contains("self.v2.data.get_stream", python);
+            Assert.Contains("struct.unpack_from(\"<ii\"", python);
+            Assert.Contains("if offsets != expected_lengths:", python);
         }
         finally
         {

@@ -2,13 +2,13 @@
 
 {{#Special_NexusFeatures}}
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 {{/Special_NexusFeatures}}
 using System.Globalization;
 {{#Special_NexusFeatures}}
 using System.IO.Compression;
 {{/Special_NexusFeatures}}
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 {{#Special_NexusFeatures}}
@@ -281,14 +281,6 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             Content = content
         };
 
-        if (relativeUrl.StartsWith("/api/v2/", StringComparison.Ordinal) ||
-            relativeUrl.Equals("/api/v2", StringComparison.Ordinal) ||
-            relativeUrl.StartsWith("/api/v2?", StringComparison.Ordinal))
-        {
-            requestMessage.Version = HttpVersion.Version20;
-            requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
-        }
-
         if (contentTypeHeaderValue is not null && requestMessage.Content is not null)
             requestMessage.Content.Headers.ContentType = MediaTypeWithQualityHeaderValue.Parse(contentTypeHeaderValue);
 
@@ -331,34 +323,18 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             return new Dictionary<string, DataResponse>();
 
         var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePathList);
-        var session = V2.Data.RegisterBatchStream(new V2.BatchStreamRequest(begin, end, resourcePathList));
+        using var response = V2.Data.GetStream(new V2.BatchStreamRequest(begin, end, resourcePathList));
         var totalLength = GetTotalLength(begin, end, resourcePathList, catalogItemMap);
         var consumedLength = 0L;
-        var tasks = session.Channels.Select(channel => Task.Run(() =>
-        {
-            try
-            {
-                using var response = V2.Data.GetBatchStreamChannel(session.SessionId, channel.ChannelId);
-                var values = ReadAsDoubleAsync(response, useAsync: false, ReportProgress).GetAwaiter().GetResult();
-                return (channel.ResourcePath, Values: values, Error: (Exception?)null);
-            }
-            catch (Exception ex)
-            {
-                return (channel.ResourcePath, Values: (double[]?)null, Error: ex);
-            }
-        })).ToArray();
-
-        Task.WaitAll(tasks);
-        var data = tasks.Select(task => task.Result).ToArray();
-        var error = data.FirstOrDefault(item => item.Error is not null);
-
-        if (error.Error is not null)
-            throw CreateChannelExceptionAsync(session.SessionId, error.ResourcePath, error.Error, CancellationToken.None).GetAwaiter().GetResult();
+        var expectedLengths = GetExpectedLengths(begin, end, resourcePathList, catalogItemMap);
+        var data = ReadBatchAsync(response, expectedLengths, useAsync: false, ReportProgress).GetAwaiter().GetResult();
 
         onProgress?.Invoke(1);
-        return data.ToDictionary(
-            item => item.ResourcePath,
-            item => CreateDataResponse(item.ResourcePath, catalogItemMap[item.ResourcePath], item.Values!));
+        return resourcePathList
+            .Select((resourcePath, index) => (resourcePath, Values: data[index]))
+            .ToDictionary(
+                item => item.resourcePath,
+                item => CreateDataResponse(item.resourcePath, catalogItemMap[item.resourcePath], item.Values));
 
         void ReportProgress(long bytesRead)
         {
@@ -388,33 +364,18 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             return new Dictionary<string, DataResponse>();
 
         var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePathList, cancellationToken).ConfigureAwait(false);
-        var session = await V2.Data.RegisterBatchStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList), cancellationToken).ConfigureAwait(false);
+        using var response = await V2.Data.GetStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList), cancellationToken).ConfigureAwait(false);
         var totalLength = GetTotalLength(begin, end, resourcePathList, catalogItemMap);
         var consumedLength = 0L;
-        var tasks = session.Channels.Select(async channel =>
-        {
-            try
-            {
-                using var response = await V2.Data.GetBatchStreamChannelAsync(session.SessionId, channel.ChannelId, cancellationToken).ConfigureAwait(false);
-                var values = await ReadAsDoubleAsync(response, useAsync: true, ReportProgress, cancellationToken).ConfigureAwait(false);
-                return (channel.ResourcePath, Values: values, Error: (Exception?)null);
-            }
-            catch (Exception ex)
-            {
-                return (channel.ResourcePath, Values: (double[]?)null, Error: ex);
-            }
-        }).ToArray();
-
-        var data = await Task.WhenAll(tasks).ConfigureAwait(false);
-        var error = data.FirstOrDefault(item => item.Error is not null);
-
-        if (error.Error is not null)
-            throw await CreateChannelExceptionAsync(session.SessionId, error.ResourcePath, error.Error, cancellationToken).ConfigureAwait(false);
+        var expectedLengths = GetExpectedLengths(begin, end, resourcePathList, catalogItemMap);
+        var data = await ReadBatchAsync(response, expectedLengths, useAsync: true, ReportProgress, cancellationToken).ConfigureAwait(false);
 
         onProgress?.Invoke(1);
-        return data.ToDictionary(
-            item => item.ResourcePath,
-            item => CreateDataResponse(item.ResourcePath, catalogItemMap[item.ResourcePath], item.Values!));
+        return resourcePathList
+            .Select((resourcePath, index) => (resourcePath, Values: data[index]))
+            .ToDictionary(
+                item => item.resourcePath,
+                item => CreateDataResponse(item.resourcePath, catalogItemMap[item.resourcePath], item.Values));
 
         void ReportProgress(long bytesRead)
         {
@@ -433,6 +394,18 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             (end - begin).Ticks /
             catalogItemMap[resourcePath].Representation.SamplePeriod.Ticks *
             sizeof(double)));
+    }
+
+    private static int[] GetExpectedLengths(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        IReadOnlyDictionary<string, V1.CatalogItem> catalogItemMap)
+    {
+        return resourcePaths.Select(resourcePath => checked((int)(
+            (end - begin).Ticks /
+            catalogItemMap[resourcePath].Representation.SamplePeriod.Ticks *
+            sizeof(double)))).ToArray();
     }
 
     private static DataResponse CreateDataResponse(string resourcePath, V1.CatalogItem catalogItem, double[] doubleData)
@@ -463,78 +436,70 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         );
     }
 
-    private async Task<Exception> CreateChannelExceptionAsync(
-        Guid sessionId, 
-        string resourcePath, 
-        Exception error, 
-        CancellationToken cancellationToken)
+    private static async Task<double[][]> ReadBatchAsync(
+        HttpResponseMessage responseMessage,
+        int[] expectedLengths,
+        bool useAsync,
+        Action<long>? reportProgress = default,
+        CancellationToken cancellationToken = default)
     {
-        // User cancel: if the token was canceled, propagate OCE as-is
-        if (error is OperationCanceledException && cancellationToken.IsCancellationRequested)
-            return error;
-
-        // Query status endpoint for root cause
-        V2.BatchStreamSessionStatus? status = default;
-
-        try
-        {
-            status = await V2.Data.GetBatchStreamSessionStatusAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Status query failed (e.g. 404 after grace period) — fall back to local exception
-        }
-
-        if (status is not null &&
-            status.State == Nexus.Api.V2.BatchStreamSessionState.Faulted &&
-            !string.IsNullOrWhiteSpace(status.FaultReason))
-        {
-            var rootCausePath = status.FaultedChannelResourcePath ?? resourcePath;
-            var message = $"The batch stream session faulted. Root cause channel: {rootCausePath}. Reason: {status.FaultReason}";
-            return new NexusException("N02", message, error);
-        }
-
-        // Default: wrap local error with channel context
-        return new NexusException("N02", $"The batch stream session faulted. Channel: {resourcePath}. Reason: {error.Message}", error);
-    }
-
-    private async Task<double[]> ReadAsDoubleAsync(HttpResponseMessage responseMessage, bool useAsync, Action<long>? reportProgress = default, CancellationToken cancellationToken = default)
-    {
-        var length = responseMessage.Content.Headers.ContentLength;
-
-        if (!length.HasValue)
-            throw new Exception("The data length is unknown.");
-
-        if (length.Value < 0 || length.Value > int.MaxValue || length.Value % 8 != 0)
-            throw new Exception("The data length is invalid.");
-
-        var elementCount = (int)length.Value / 8;
-        var doubleBuffer = new double[elementCount];
-        var byteBuffer = new CastMemoryManager<double, byte>(doubleBuffer).Memory;
-
+        var values = expectedLengths.Select(length => new double[length / sizeof(double)]).ToArray();
+        var offsets = new int[expectedLengths.Length];
+        var header = new byte[8];
         Stream stream = useAsync
             ? await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false)
             : responseMessage.Content.ReadAsStream(cancellationToken);
 
-        var remainingBuffer = byteBuffer;
-
-        while (!remainingBuffer.IsEmpty)
+        while (true)
         {
-            var bytesRead = await stream.ReadAsync(remainingBuffer, cancellationToken).ConfigureAwait(false);
+            if (await ReadAsync(header.AsMemory(0, 1)).ConfigureAwait(false) == 0)
+                break;
 
-            if (bytesRead == 0)
-                throw new Exception("The stream ended early.");
+            await ReadExactlyAsync(header.AsMemory(1)).ConfigureAwait(false);
 
-            remainingBuffer = remainingBuffer.Slice(bytesRead);
-            reportProgress?.Invoke(bytesRead);
+            var resourceIndex = BinaryPrimitives.ReadInt32LittleEndian(header);
+            var payloadLength = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(4));
+
+            if (resourceIndex < 0 || resourceIndex >= values.Length)
+                throw new Exception("The batch stream contains an invalid resource index.");
+
+            if (payloadLength < 0)
+                throw new Exception("The batch stream contains an invalid payload length.");
+
+            if (offsets[resourceIndex] > expectedLengths[resourceIndex] - payloadLength)
+                throw new Exception("The batch stream contains more data than expected.");
+
+            var target = new CastMemoryManager<double, byte>(values[resourceIndex]).Memory
+                .Slice(offsets[resourceIndex], payloadLength);
+            await ReadExactlyAsync(target).ConfigureAwait(false);
+            offsets[resourceIndex] += payloadLength;
+            reportProgress?.Invoke(payloadLength);
         }
 
-        var trailingByte = new byte[1];
+        if (!offsets.SequenceEqual(expectedLengths))
+            throw new Exception("The batch stream ended before all data was received.");
 
-        if (await stream.ReadAsync(trailingByte, cancellationToken).ConfigureAwait(false) != 0)
-            throw new Exception("The stream is longer than the declared data length.");
+        return values;
 
-        return doubleBuffer;
+        ValueTask<int> ReadAsync(Memory<byte> buffer)
+        {
+            return useAsync
+                ? stream.ReadAsync(buffer, cancellationToken)
+                : ValueTask.FromResult(stream.Read(buffer.Span));
+        }
+
+        async Task ReadExactlyAsync(Memory<byte> buffer)
+        {
+            while (!buffer.IsEmpty)
+            {
+                var bytesRead = await ReadAsync(buffer).ConfigureAwait(false);
+
+                if (bytesRead == 0)
+                    throw new Exception("The batch stream ended in the middle of a frame.");
+
+                buffer = buffer[bytesRead..];
+            }
+        }
     }
 
     /// <summary>
