@@ -194,7 +194,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         if not resource_path_list:
             return {}
 
-        precision_size = 4 if precision == Precision.FLOAT32 else 8
+        precision_size = precision.value
 
         catalog_item_map = {{{Await}}}self.v1.catalogs.search_catalog_items(resource_path_list)
         response = {{{Await}}}self.v2.data.get_stream(BatchStreamRequest(begin, end, resource_path_list, precision))

@@ -576,12 +576,23 @@ $@"class {augmentedClassName}:
             if (schema.Type != "string")
                 throw new Exception("Only enum of type string is supported.");
 
+            var enumValueArray = default(IList<IOpenApiAny>);
+
+            if (schema.Extensions.TryGetValue("x-enum-values", out var extValues) && extValues is OpenApiArray openApiArray)
+                enumValueArray = openApiArray;
+
             var enumValues = string
                 .Join($"{Environment.NewLine}{Environment.NewLine}", schema.Enum
                 .OfType<OpenApiString>()
-                .Select(current =>
-$@"    {Shared.ToSnakeCase(current.Value).ToUpper()} = ""{Shared.ToSnakeCase(current.Value).ToUpper()}""
-    """"""{GetFirstLine(current.Value)}"""""""));
+                .Select((current, i) =>
+                {
+                    var value = enumValueArray is not null && enumValueArray[i] is OpenApiInteger openApiInt
+                        ? openApiInt.Value.ToString()
+                        : $"\"{Shared.ToSnakeCase(current.Value).ToUpper()}\"";
+
+                    return $@"    {Shared.ToSnakeCase(current.Value).ToUpper()} = {value}
+    """"""{GetFirstLine(current.Value)}""""""";
+                }));
 
             sourceTextBuilder.AppendLine(
 @$"class {modelName}(Enum):
