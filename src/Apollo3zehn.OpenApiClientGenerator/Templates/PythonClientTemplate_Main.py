@@ -177,13 +177,15 @@ class {{{ClientName}}}{{{Async}}}Client:
         begin: datetime, 
         end: datetime, 
         resource_paths: Iterable[str],
-        on_progress: Optional[Callable[[float], None]]) -> dict[str, DataResponse]:
+        precision: Precision,
+        on_progress: Optional[Callable[[float], None]] = None) -> dict[str, DataResponse]:
         """This high-level methods simplifies loading multiple resources at once.
 
         Args:
             begin: Start date/time.
             end: End date/time.
             resource_paths: The resource paths.
+            precision: The floating point precision requested from the server.
             onProgress: A callback which accepts the current progress.
         """
 
@@ -192,10 +194,12 @@ class {{{ClientName}}}{{{Async}}}Client:
         if not resource_path_list:
             return {}
 
+        precision_size = 4 if precision == Precision.FLOAT32 else 8
+
         catalog_item_map = {{{Await}}}self.v1.catalogs.search_catalog_items(resource_path_list)
-        response = {{{Await}}}self.v2.data.get_stream(BatchStreamRequest(begin, end, resource_path_list))
+        response = {{{Await}}}self.v2.data.get_stream(BatchStreamRequest(begin, end, resource_path_list, precision))
         expected_lengths = [
-            ((end - begin) // catalog_item_map[path].representation.sample_period) * 8
+            ((end - begin) // catalog_item_map[path].representation.sample_period) * precision_size
             for path in resource_path_list]
         total_length = sum(expected_lengths)
         consumed = 0
@@ -207,7 +211,7 @@ class {{{ClientName}}}{{{Async}}}Client:
                 on_progress(min(1, consumed / total_length))
 
         try:
-            values = {{{Await}}}self._read_batch(response, expected_lengths, report_progress)
+            values = {{{Await}}}self._read_batch(response, expected_lengths, precision, report_progress)
         finally:
             {{{Await}}}response.{{{Aclose}}}()
 
@@ -247,8 +251,12 @@ class {{{ClientName}}}{{{Async}}}Client:
         self,
         response: Response,
         expected_lengths: list[int],
-        report_progress: Optional[Callable[[int], None]] = None) -> list[array[float]]:
+        precision: Precision,
+        report_progress: Optional[Callable[[int], None]] = None) -> list[memoryview[float]]:
+        array_type = "f" if precision == Precision.FLOAT32 else "d"
+
         buffers = [bytearray(length) for length in expected_lengths]
+        byte_views = [memoryview(buffer).cast("B") for buffer in buffers]
         offsets = [0] * len(expected_lengths)
         pending = bytearray()
         resource_index: Optional[int] = None
@@ -265,7 +273,7 @@ class {{{ClientName}}}{{{Async}}}Client:
                     current_index, payload_length = struct.unpack_from("<ii", pending)
                     del pending[:8]
 
-                    if current_index < 0 or current_index >= len(buffers):
+                    if current_index < 0 or current_index >= len(byte_views):
                         raise Exception("The batch stream contains an invalid resource index.")
 
                     if payload_length < 0:
@@ -281,7 +289,7 @@ class {{{ClientName}}}{{{Async}}}Client:
 
                 current_index = cast(int, resource_index)
                 offset = offsets[current_index]
-                buffers[current_index][offset:offset + payload_length] = pending[:payload_length]
+                byte_views[current_index][offset:offset + payload_length] = pending[:payload_length]
                 del pending[:payload_length]
                 offsets[current_index] += payload_length
 
@@ -297,15 +305,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         if offsets != expected_lengths:
             raise Exception("The batch stream ended before all data was received.")
 
-        values = []
-
-        for buffer in buffers:
-            resource_values = array("d")
-            resource_values.frombytes(buffer)
-
-            values.append(resource_values)
-
-        return values
+        return [memoryview(buffer).cast(array_type) for buffer in buffers]
 
     {{{Def}}} export(
         self,
@@ -316,7 +316,8 @@ class {{{ClientName}}}{{{Async}}}Client:
         resource_paths: Iterable[str],
         configuration: dict[str, object],
         target_folder: str,
-        on_progress: Optional[Callable[[float, str], None]]) -> None:
+        precision: Precision,
+        on_progress: Optional[Callable[[float, str], None]] = None) -> None:
         """This high-level methods simplifies exporting multiple resources at once.
 
         Args:
@@ -327,6 +328,7 @@ class {{{ClientName}}}{{{Async}}}Client:
             resource_paths: The resource paths to export.
             configuration: The configuration.
             targetFolder: The target folder for the files to extract.
+            precision: The floating point precision requested from the server.
             onProgress: A callback which accepts the current progress and the progress message.
         """
 
@@ -336,11 +338,12 @@ class {{{ClientName}}}{{{Async}}}Client:
             file_period,
             file_format,
             list(resource_paths),
-            configuration
+            configuration,
+            precision
         )
 
         # Start job
-        job = {{{Await}}}self.v1.jobs.export(export_parameters)
+        job = {{{Await}}}self.v2.jobs.export(export_parameters)
 
         # Wait for job to finish
         artifact_id: Optional[str] = None

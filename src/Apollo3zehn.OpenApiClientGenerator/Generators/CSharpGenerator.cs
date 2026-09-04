@@ -574,14 +574,25 @@ $@"    /// <summary>
             if (schema.Type != "string")
                 throw new Exception("Only enum of type string is supported.");
 
+            var enumValueArray = default(IList<IOpenApiAny>);
+
+            if (schema.Extensions.TryGetValue("x-enum-values", out var extValues) && extValues is OpenApiArray openApiArray)
+                enumValueArray = openApiArray;
+
             var enumValues = string
                 .Join($",{Environment.NewLine}{Environment.NewLine}", schema.Enum
                 .OfType<OpenApiString>()
-                .Select(current =>
-$@"    /// <summary>
+                .Select((current, i) =>
+                {
+                    var suffix = enumValueArray is not null && enumValueArray[i] is OpenApiInteger openApiInt
+                        ? $" = {openApiInt.Value}"
+                        : "";
+
+                    return $@"    /// <summary>
     ///{FormatXmlDocText(current.Value)}
     /// </summary>
-    {current.Value}"));
+    {current.Value}{suffix}";
+                }));
 
             sourceTextBuilder.AppendLine(
 @$"/// <summary>

@@ -6,8 +6,8 @@ import base64
 import json
 {{#Special_NexusFeatures}}
 import struct
+import asyncio
 import time
-from array import array
 {{/Special_NexusFeatures}}
 from dataclasses import dataclass
 {{#Special_NexusFeatures}}
@@ -18,7 +18,6 @@ from typing import (Any, AsyncIterable, Callable, Iterable, Optional, Type,
                     TypeVar, Union, cast)
 {{#Special_NexusFeatures}}
 from zipfile import ZipFile
-from uuid import UUID
 {{/Special_NexusFeatures}}
 
 from httpx import AsyncClient, Client, Request, Response
@@ -62,6 +61,6 @@ class DataResponse:
     sample_period: timedelta
     """The sample period."""
 
-    values: array[float]
+    values: memoryview[float]
     """The data."""
 {{/Special_NexusFeatures}}
