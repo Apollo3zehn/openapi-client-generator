@@ -143,6 +143,11 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
 {
 {{#Special_NexusFeatures}}
     private const string ConfigurationHeaderKey = "{{{Special_ConfigurationHeaderKey}}}";
+    private const byte BatchStreamProtocolVersion = 1;
+    private const byte BatchStreamDataFrameType = 1;
+    private const byte BatchStreamErrorFrameType = 2;
+    private const byte BatchStreamEndFrameType = 3;
+    private const int MaximumBatchStreamErrorMessageLength = 64 * 1024;
 {{/Special_NexusFeatures}}
 {{#Special_AccessTokenSupport}}
     private const string AuthorizationHeaderKey = "Authorization";
@@ -533,22 +538,57 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             }
         }
 
-        var header = new byte[8];
+        var prefix = new byte[1];
+        var header = new byte[5];
         Stream stream = useAsync
             ? await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false)
             : responseMessage.Content.ReadAsStream(cancellationToken);
 
+        await ReadExactlyAsync(prefix).ConfigureAwait(false);
+
+        if (prefix[0] != BatchStreamProtocolVersion)
+            throw new Exception($"The batch stream uses an unsupported protocol version: {prefix[0]}.");
+
         while (true)
         {
-            if (await ReadAsync(header.AsMemory(0, 1)).ConfigureAwait(false) == 0)
+            var bytesRead = await ReadAsync(prefix).ConfigureAwait(false);
+
+            if (bytesRead == 0)
+                throw new Exception("The batch stream ended before the end frame was received.");
+
+            var frameType = prefix[0];
+
+            if (frameType == BatchStreamEndFrameType)
+            {
+                if (await ReadAsync(prefix).ConfigureAwait(false) != 0)
+                    throw new Exception("The batch stream contains data after the end frame.");
+
                 break;
+            }
 
-            await ReadExactlyAsync(header.AsMemory(1)).ConfigureAwait(false);
+            if (frameType == BatchStreamErrorFrameType)
+            {
+                await ReadExactlyAsync(header.AsMemory(0, 4)).ConfigureAwait(false);
+                var messageLength = BinaryPrimitives.ReadInt32LittleEndian(header);
 
-            var resourceIndex = BinaryPrimitives.ReadInt32LittleEndian(header);
-            var payloadLength = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(4));
+                if (messageLength < 0 || messageLength > MaximumBatchStreamErrorMessageLength)
+                    throw new Exception("The batch stream contains an invalid error message length.");
 
-            if (resourceIndex < 0 || resourceIndex >= values.Length)
+                var messageBuffer = new byte[messageLength];
+                await ReadExactlyAsync(messageBuffer).ConfigureAwait(false);
+
+                throw new {{{ExceptionType}}}("{{{ExceptionCodePrefix}}}02", Encoding.UTF8.GetString(messageBuffer));
+            }
+
+            if (frameType != BatchStreamDataFrameType)
+                throw new Exception($"The batch stream contains an unknown frame type: {frameType}.");
+
+            await ReadExactlyAsync(header).ConfigureAwait(false);
+
+            var resourceIndex = header[0];
+            var payloadLength = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(1));
+
+            if (resourceIndex >= values.Length)
                 throw new Exception("The batch stream contains an invalid resource index.");
 
             if (payloadLength < 0)
