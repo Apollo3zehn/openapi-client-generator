@@ -61,6 +61,6 @@ class DataResponse:
     sample_period: timedelta
     """The sample period."""
 
-    values: memoryview[float]
+    values: memoryview
     """The data."""
 {{/Special_NexusFeatures}}

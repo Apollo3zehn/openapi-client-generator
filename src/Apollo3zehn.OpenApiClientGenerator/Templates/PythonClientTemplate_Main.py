@@ -252,7 +252,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         response: Response,
         expected_lengths: list[int],
         precision: Precision,
-        report_progress: Optional[Callable[[int], None]] = None) -> list[memoryview[float]]:
+        report_progress: Optional[Callable[[int], None]] = None) -> list[memoryview]:
         array_type = "f" if precision == Precision.FLOAT32 else "d"
 
         buffers = [bytearray(length) for length in expected_lengths]
@@ -305,7 +305,7 @@ class {{{ClientName}}}{{{Async}}}Client:
         if offsets != expected_lengths:
             raise Exception("The batch stream ended before all data was received.")
 
-        return [memoryview(buffer).cast(array_type) for buffer in buffers]
+        return [cast(memoryview, memoryview(buffer).cast(array_type)) for buffer in buffers]
 
     {{{Def}}} export(
         self,
