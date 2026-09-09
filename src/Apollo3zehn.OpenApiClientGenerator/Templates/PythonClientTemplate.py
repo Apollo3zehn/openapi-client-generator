@@ -33,9 +33,9 @@ T = TypeVar("T")
 
 {{#Special_NexusFeatures}}
 @dataclass(frozen=True)
-class DataResponse:
+class ResourceInfo:
     """
-    Result of a data request with a certain resource path.
+    Metadata for a data resource.
 
     Args:
         catalog_item: The catalog item.
@@ -43,13 +43,12 @@ class DataResponse:
         unit: The optional resource unit.
         description: The optional resource description.
         sample_period: The sample period.
-        values: The data.
     """
 
     catalog_item: CatalogItem
     """The catalog item."""
 
-    name: Optional[str]
+    name: str
     """The resource name."""
 
     unit: Optional[str]
@@ -60,6 +59,20 @@ class DataResponse:
 
     sample_period: timedelta
     """The sample period."""
+
+
+@dataclass(frozen=True)
+class DataResponse:
+    """
+    Result of a data request with a certain resource path.
+
+    Args:
+        info: The resource metadata.
+        values: The data.
+    """
+
+    info: ResourceInfo
+    """The resource metadata."""
 
     values: memoryview
     """The data."""

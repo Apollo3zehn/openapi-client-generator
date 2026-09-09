@@ -236,14 +236,16 @@ class {{{ClientName}}}{{{Async}}}Client:
                 if resource.properties is not None and "description" in resource.properties and type(resource.properties["description"]) == str \
                 else None
 
-            sample_period = catalog_item.representation.sample_period
-
-            result[resource_path] = DataResponse(
+            info = ResourceInfo(
                 catalog_item=catalog_item,
                 name=resource.id,
                 unit=unit,
                 description=description,
-                sample_period=sample_period,
+                sample_period=catalog_item.representation.sample_period
+            )
+
+            result[resource_path] = DataResponse(
+                info=info,
                 values=value
             )
 

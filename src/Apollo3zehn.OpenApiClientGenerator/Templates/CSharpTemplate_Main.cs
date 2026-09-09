@@ -58,14 +58,29 @@ public interface I{{{ClientName}}}Client
     /// <param name="begin">Start date/time.</param>
     /// <param name="end">End date/time.</param>
     /// <param name="resourcePaths">The resource paths.</param>
-    /// <param name="bufferProvider">An optional callback which provides a writable buffer for each resource path, chunk element count, and remaining resource element count.</param>
     /// <param name="onProgress">A callback which accepts the current progress.</param>
     /// <typeparam name="T">The element type. Use <see cref="double"/> for 64-bit or <see cref="float"/> for 32-bit precision.</typeparam>
     IReadOnlyDictionary<string, DataResponse<T>> Load<T>(
         DateTime begin,
         DateTime end,
         IEnumerable<string> resourcePaths,
-        Func<string, int, long, Memory<T>>? bufferProvider = default,
+        Action<double>? onProgress = default)
+        where T : struct;
+
+    /// <summary>
+    /// This high-level methods simplifies loading multiple resources at once into caller-provided buffers.
+    /// </summary>
+    /// <param name="begin">Start date/time.</param>
+    /// <param name="end">End date/time.</param>
+    /// <param name="resourcePaths">The resource paths.</param>
+    /// <param name="bufferProvider">A callback which provides a writable buffer for each resource path, chunk element count, and remaining resource element count.</param>
+    /// <param name="onProgress">A callback which accepts the current progress.</param>
+    /// <typeparam name="T">The element type. Use <see cref="double"/> for 64-bit or <see cref="float"/> for 32-bit precision.</typeparam>
+    IReadOnlyDictionary<string, ResourceInfo> Load<T>(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Func<string, int, long, Memory<T>> bufferProvider,
         Action<double>? onProgress = default)
         where T : struct;
 
@@ -75,7 +90,6 @@ public interface I{{{ClientName}}}Client
     /// <param name="begin">Start date/time.</param>
     /// <param name="end">End date/time.</param>
     /// <param name="resourcePaths">The resource paths.</param>
-    /// <param name="bufferProvider">An optional callback which provides a writable buffer for each resource path, chunk element count, and remaining resource element count.</param>
     /// <param name="onProgress">A callback which accepts the current progress.</param>
     /// <param name="cancellationToken">A token to cancel the current operation.</param>
     /// <typeparam name="T">The element type. Use <see cref="double"/> for 64-bit or <see cref="float"/> for 32-bit precision.</typeparam>
@@ -83,7 +97,25 @@ public interface I{{{ClientName}}}Client
         DateTime begin,
         DateTime end,
         IEnumerable<string> resourcePaths,
-        Func<string, int, long, Memory<T>>? bufferProvider = default,
+        Action<double>? onProgress = default,
+        CancellationToken cancellationToken = default)
+        where T : struct;
+
+    /// <summary>
+    /// This high-level methods simplifies loading multiple resources at once into caller-provided buffers.
+    /// </summary>
+    /// <param name="begin">Start date/time.</param>
+    /// <param name="end">End date/time.</param>
+    /// <param name="resourcePaths">The resource paths.</param>
+    /// <param name="bufferProvider">A callback which provides a writable buffer for each resource path, chunk element count, and remaining resource element count.</param>
+    /// <param name="onProgress">A callback which accepts the current progress.</param>
+    /// <param name="cancellationToken">A token to cancel the current operation.</param>
+    /// <typeparam name="T">The element type. Use <see cref="double"/> for 64-bit or <see cref="float"/> for 32-bit precision.</typeparam>
+    Task<IReadOnlyDictionary<string, ResourceInfo>> LoadAsync<T>(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Func<string, int, long, Memory<T>> bufferProvider,
         Action<double>? onProgress = default,
         CancellationToken cancellationToken = default)
         where T : struct;
@@ -375,35 +407,32 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         DateTime begin, 
         DateTime end, 
         IEnumerable<string> resourcePaths,
-        Func<string, int, long, Memory<T>>? bufferProvider = default,
         Action<double>? onProgress = default)
         where T : struct
     {
-        var precision = GetPrecisionFromType<T>();
-        var resourcePathList = resourcePaths.ToList();
+        var result = LoadCoreAsync<T>(begin, end, resourcePaths, bufferProvider: null, useAsync: false, onProgress).GetAwaiter().GetResult();
 
-        if (resourcePathList.Count == 0)
-            return new Dictionary<string, DataResponse<T>>();
-
-        var catalogItemMap = V1.Catalogs.SearchCatalogItems(resourcePathList);
-        using var response = V2.Data.GetStream(new V2.BatchStreamRequest(begin, end, resourcePathList, precision));
-        var expectedLengths = GetExpectedLengths(begin, end, resourcePathList, catalogItemMap, precision);
-        var totalLength = expectedLengths.Sum(length => (long)length);
-        var consumedLength = 0L;
-        var data = ReadBatchAsync<T>(response, resourcePathList, expectedLengths, bufferProvider, useAsync: false, ReportProgress).GetAwaiter().GetResult();
-
-        onProgress?.Invoke(1);
-        return resourcePathList
-            .Select((resourcePath, index) => (resourcePath, Values: data[index]))
+        return result.ResourcePaths
+            .Select((resourcePath, index) => (resourcePath, Values: result.Values[index]))
             .ToDictionary(
                 item => item.resourcePath,
-                item => CreateDataResponse<T>(item.resourcePath, catalogItemMap[item.resourcePath], item.Values));
+                item => new DataResponse<T>(result.ResourceInfoMap[item.resourcePath], item.Values));
+    }
 
-        void ReportProgress(long bytesRead)
-        {
-            if (totalLength > 0)
-                onProgress?.Invoke(Math.Min(1, Interlocked.Add(ref consumedLength, bytesRead) / (double)totalLength));
-        }
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, ResourceInfo> Load<T>(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Func<string, int, long, Memory<T>> bufferProvider,
+        Action<double>? onProgress = default)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(bufferProvider);
+
+        var result = LoadCoreAsync<T>(begin, end, resourcePaths, bufferProvider, useAsync: false, onProgress).GetAwaiter().GetResult();
+
+        return result.ResourceInfoMap;
     }
 
     /// <inheritdoc />
@@ -411,7 +440,42 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         DateTime begin, 
         DateTime end, 
         IEnumerable<string> resourcePaths,
-        Func<string, int, long, Memory<T>>? bufferProvider = default,
+        Action<double>? onProgress = default,
+        CancellationToken cancellationToken = default)
+        where T : struct
+    {
+        var result = await LoadCoreAsync<T>(begin, end, resourcePaths, bufferProvider: null, useAsync: true, onProgress, cancellationToken).ConfigureAwait(false);
+
+        return result.ResourcePaths
+            .Select((resourcePath, index) => (resourcePath, Values: result.Values[index]))
+            .ToDictionary(
+                item => item.resourcePath,
+                item => new DataResponse<T>(result.ResourceInfoMap[item.resourcePath], item.Values));
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, ResourceInfo>> LoadAsync<T>(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Func<string, int, long, Memory<T>> bufferProvider,
+        Action<double>? onProgress = default,
+        CancellationToken cancellationToken = default)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(bufferProvider);
+
+        var result = await LoadCoreAsync<T>(begin, end, resourcePaths, bufferProvider, useAsync: true, onProgress, cancellationToken).ConfigureAwait(false);
+
+        return result.ResourceInfoMap;
+    }
+
+    private async Task<LoadResult<T>> LoadCoreAsync<T>(
+        DateTime begin,
+        DateTime end,
+        IEnumerable<string> resourcePaths,
+        Func<string, int, long, Memory<T>>? bufferProvider,
+        bool useAsync,
         Action<double>? onProgress = default,
         CancellationToken cancellationToken = default)
         where T : struct
@@ -420,21 +484,25 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         var resourcePathList = resourcePaths.ToList();
 
         if (resourcePathList.Count == 0)
-            return new Dictionary<string, DataResponse<T>>();
+            return new LoadResult<T>(resourcePathList, new Dictionary<string, ResourceInfo>(), []);
 
-        var catalogItemMap = await V1.Catalogs.SearchCatalogItemsAsync(resourcePathList, cancellationToken).ConfigureAwait(false);
-        using var response = await V2.Data.GetStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList, precision), cancellationToken).ConfigureAwait(false);
+        var catalogItemMap = useAsync
+            ? await V1.Catalogs.SearchCatalogItemsAsync(resourcePathList, cancellationToken).ConfigureAwait(false)
+            : V1.Catalogs.SearchCatalogItems(resourcePathList);
+        using var response = useAsync
+            ? await V2.Data.GetStreamAsync(new V2.BatchStreamRequest(begin, end, resourcePathList, precision), cancellationToken).ConfigureAwait(false)
+            : V2.Data.GetStream(new V2.BatchStreamRequest(begin, end, resourcePathList, precision));
         var expectedLengths = GetExpectedLengths(begin, end, resourcePathList, catalogItemMap, precision);
         var totalLength = expectedLengths.Sum(length => (long)length);
         var consumedLength = 0L;
-        var data = await ReadBatchAsync<T>(response, resourcePathList, expectedLengths, bufferProvider, useAsync: true, ReportProgress, cancellationToken).ConfigureAwait(false);
+        var data = await ReadBatchAsync<T>(response, resourcePathList, expectedLengths, bufferProvider, useAsync, ReportProgress, cancellationToken).ConfigureAwait(false);
 
         onProgress?.Invoke(1);
-        return resourcePathList
-            .Select((resourcePath, index) => (resourcePath, Values: data[index]))
-            .ToDictionary(
-                item => item.resourcePath,
-                item => CreateDataResponse<T>(item.resourcePath, catalogItemMap[item.resourcePath], item.Values));
+        var resourceInfoMap = resourcePathList.ToDictionary(
+            resourcePath => resourcePath,
+            resourcePath => CreateResourceInfo(catalogItemMap[resourcePath]));
+
+        return new LoadResult<T>(resourcePathList, resourceInfoMap, data);
 
         void ReportProgress(long bytesRead)
         {
@@ -467,8 +535,7 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
         throw new NotSupportedException($"The type {typeof(T)} is not supported. Only double and float are allowed.");
     }
 
-    private static DataResponse<T> CreateDataResponse<T>(string resourcePath, V1.CatalogItem catalogItem, ReadOnlyMemory<T> values)
-        where T : struct
+    private static ResourceInfo CreateResourceInfo(V1.CatalogItem catalogItem)
     {
         var resource = catalogItem.Resource;
 
@@ -486,13 +553,12 @@ public class {{{ClientName}}}Client : I{{{ClientName}}}Client, IDisposable
             descriptionElement.ValueKind == JsonValueKind.String)
             description = descriptionElement.GetString();
 
-        return new DataResponse<T>(
+        return new ResourceInfo(
             CatalogItem: catalogItem,
             Name: resource.Id,
             Unit: unit,
             Description: description,
-            SamplePeriod: catalogItem.Representation.SamplePeriod,
-            Values: values);
+            SamplePeriod: catalogItem.Representation.SamplePeriod);
     }
 
     private static async Task<Memory<T>[]> ReadBatchAsync<T>(
@@ -985,20 +1051,32 @@ internal static class Utilities
 /// <summary>
 /// Result of a data request with a certain resource path.
 /// </summary>
+/// <param name="Info">The resource metadata.</param>
+/// <param name="Values">The data.</param>
+/// <typeparam name="T">The element type of the data.</typeparam>
+public sealed record DataResponse<T>(
+    ResourceInfo Info,
+    ReadOnlyMemory<T> Values) where T : struct;
+
+/// <summary>
+/// Metadata for a data resource.
+/// </summary>
 /// <param name="CatalogItem">The catalog item.</param>
 /// <param name="Name">The resource name.</param>
 /// <param name="Unit">The optional resource unit.</param>
 /// <param name="Description">The optional resource description.</param>
 /// <param name="SamplePeriod">The sample period.</param>
-/// <param name="Values">The data.</param>
-/// <typeparam name="T">The element type of the data.</typeparam>
-public record DataResponse<T>(
-    V1.CatalogItem CatalogItem, 
-    string? Name,
+public sealed record ResourceInfo(
+    V1.CatalogItem CatalogItem,
+    string Name,
     string? Unit,
     string? Description,
-    TimeSpan SamplePeriod,
-    ReadOnlyMemory<T> Values) where T : struct;
+    TimeSpan SamplePeriod);
+
+internal sealed record LoadResult<T>(
+    IReadOnlyList<string> ResourcePaths,
+    IReadOnlyDictionary<string, ResourceInfo> ResourceInfoMap,
+    Memory<T>[] Values) where T : struct;
 
 internal sealed class CastMemoryManager<TFrom, TTo> : MemoryManager<TTo>
     where TFrom : struct
