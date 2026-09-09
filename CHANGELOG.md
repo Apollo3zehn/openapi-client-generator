@@ -1,3 +1,7 @@
+## v1.0.0-beta.27 - 2026-09-09
+
+- Switch to Apache Arrow
+
 ## v1.0.0-beta.26 - 2026-09-09
 
 - Improve batch stream protocol with error frames
