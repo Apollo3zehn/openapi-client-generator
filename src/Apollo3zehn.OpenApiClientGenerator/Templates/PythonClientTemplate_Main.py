@@ -18,11 +18,6 @@ class {{{ClientName}}}{{{Async}}}Client:
     
 {{#Special_NexusFeatures}}
     ___configuration_header_key: str = "{{{Special_ConfigurationHeaderKey}}}"
-    ___batch_stream_protocol_version: int = 1
-    ___batch_stream_data_frame_type: int = 1
-    ___batch_stream_error_frame_type: int = 2
-    ___batch_stream_end_frame_type: int = 3
-    ___batch_stream_max_error_message_length: int = 64 * 1024
 {{/Special_NexusFeatures}}
 {{#Special_AccessTokenSupport}}
     ___authorization_header_key: str = "Authorization"
@@ -262,107 +257,102 @@ class {{{ClientName}}}{{{Async}}}Client:
         report_progress: Optional[Callable[[int], None]] = None) -> list[memoryview]:
         array_type = "f" if precision == Precision.FLOAT32 else "d"
         precision_size = precision.value
+        precision_type = pa.float32() if precision == Precision.FLOAT32 else pa.float64()
 
         buffers = [bytearray(length) for length in expected_lengths]
         byte_views = [memoryview(buffer).cast("B") for buffer in buffers]
         offsets = [0] * len(expected_lengths)
-        pending = bytearray()
-        has_version = False
-        has_end_frame = False
+{{#Async}}
+        stream = io.BytesIO()
 
         {{{For}}} data in response.{{{Aiter_bytes}}}():
-            pending.extend(data)
+            stream.write(data)
+{{/Async}}
 
-            while True:
-                if not has_version:
-                    if len(pending) < 1:
-                        break
+        try:
+            {{{ReadBatchOpen}}}
+        except Exception as ex:
+            raise Exception("The Arrow data stream failed or ended unexpectedly.") from ex
 
-                    version = pending[0]
-                    del pending[:1]
+        record_batch_iterator = iter(record_batches)
 
-                    if version != self.___batch_stream_protocol_version:
-                        raise Exception(f"The batch stream uses an unsupported protocol version: {version}.")
+        while True:
+            try:
+                record_batch = next(record_batch_iterator)
+            except StopIteration:
+                break
+            except Exception as ex:
+                raise Exception("The Arrow data stream failed or ended unexpectedly.") from ex
 
-                    has_version = True
+            resource_indexes, record_offsets, values_array = self._get_arrow_arrays(record_batch, precision_type)
 
-                if len(pending) < 1:
-                    break
+            for row_index in range(record_batch.num_rows):
+                current_index = resource_indexes[row_index].as_py()
+                current_offset = record_offsets[row_index].as_py()
+                row_values = values_array[row_index]
 
-                frame_type = pending[0]
+                if current_index is None:
+                    raise Exception("The Arrow stream contains a null resource index.")
 
-                if frame_type == self.___batch_stream_end_frame_type:
-                    del pending[:1]
+                if current_offset is None:
+                    raise Exception("The Arrow stream contains a null offset.")
 
-                    if pending:
-                        raise Exception("The batch stream contains data after the end frame.")
+                if current_index < 0 or current_index >= len(byte_views):
+                    raise Exception("The Arrow stream contains an invalid resource index.")
 
-                    has_end_frame = True
-                    break
+                if current_offset < 0:
+                    raise Exception("The Arrow stream contains an invalid offset.")
 
-                if frame_type == self.___batch_stream_error_frame_type:
-                    if len(pending) < 5:
-                        break
+                if current_offset != offsets[current_index] // precision_size:
+                    raise Exception("The Arrow stream contains out-of-order data.")
 
-                    message_length = struct.unpack_from("<i", pending, 1)[0]
+                if not row_values.is_valid:
+                    raise Exception("The Arrow stream contains null values.")
 
-                    if message_length < 0 or message_length > self.___batch_stream_max_error_message_length:
-                        raise Exception("The batch stream contains an invalid error message length.")
-
-                    if len(pending) < 5 + message_length:
-                        break
-
-                    message = bytes(pending[5:5 + message_length]).decode("utf-8")
-                    raise {{{ExceptionType}}}("{{{ExceptionCodePrefix}}}02", message)
-
-                if frame_type != self.___batch_stream_data_frame_type:
-                    raise Exception(f"The batch stream contains an unknown frame type: {frame_type}.")
-
-                if len(pending) < 6:
-                    break
-
-                current_index = pending[1]
-                payload_length = struct.unpack_from("<i", pending, 2)[0]
-
-                if current_index >= len(byte_views):
-                    raise Exception("The batch stream contains an invalid resource index.")
-
-                if payload_length < 0:
-                    raise Exception("The batch stream contains an invalid payload length.")
-
-                if payload_length % precision_size != 0:
-                    raise Exception("The batch stream contains an unaligned payload length.")
+                values = row_values.values
+                value_buffer = values.buffers()[1]
+                payload_offset = values.offset * precision_size
+                payload_length = len(values) * precision_size
+                payload = value_buffer.slice(payload_offset, payload_length).to_pybytes()
 
                 if offsets[current_index] > expected_lengths[current_index] - payload_length:
-                    raise Exception("The batch stream contains more data than expected.")
-
-                if len(pending) < 6 + payload_length:
-                    break
+                    raise Exception("The Arrow stream contains more data than expected.")
 
                 offset = offsets[current_index]
-                byte_views[current_index][offset:offset + payload_length] = pending[6:6 + payload_length]
-                del pending[:6 + payload_length]
+                byte_views[current_index][offset:offset + payload_length] = payload
                 offsets[current_index] += payload_length
 
                 if report_progress is not None:
                     report_progress(payload_length)
 
-            if has_end_frame:
-                break
-
-        if not has_version:
-            raise Exception("The batch stream ended before the protocol version was received.")
-
-        if pending and not has_end_frame:
-            raise Exception("The batch stream ended in the middle of a frame.")
-
-        if not has_end_frame:
-            raise Exception("The batch stream ended before the end frame was received.")
-
         if offsets != expected_lengths:
-            raise Exception("The batch stream ended before all data was received.")
+            raise Exception("The Arrow stream ended before all data was received.")
 
         return [cast(memoryview, memoryview(buffer).cast(array_type)) for buffer in buffers]
+
+    @staticmethod
+    def _get_arrow_arrays(record_batch: pa.RecordBatch, precision_type: pa.DataType) -> tuple[pa.Array, pa.Array, pa.Array]:
+        schema = record_batch.schema
+
+        if len(schema) != 3 or \
+            schema[0].name != "resourceIndex" or not schema[0].type.equals(pa.int32()) or \
+            schema[1].name != "offset" or not schema[1].type.equals(pa.int64()) or \
+            schema[2].name != "values" or not pa.types.is_list(schema[2].type):
+            raise Exception("The Arrow stream schema is invalid.")
+
+        if not schema[2].type.value_type.equals(precision_type):
+            raise Exception("The Arrow stream value type does not match the requested precision.")
+
+        resource_indexes = record_batch.column(0)
+        offsets = record_batch.column(1)
+        values = record_batch.column(2)
+
+        if not pa.types.is_int32(resource_indexes.type) or \
+            not pa.types.is_int64(offsets.type) or \
+            not pa.types.is_list(values.type):
+            raise Exception("The Arrow stream schema is invalid.")
+
+        return resource_indexes, offsets, values
 
     {{{Def}}} export(
         self,
