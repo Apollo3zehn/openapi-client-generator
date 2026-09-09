@@ -1,3 +1,7 @@
+## v1.0.0-beta.28 - 2026-09-09
+
+- Fix arrow array not being disposed
+
 ## v1.0.0-beta.27 - 2026-09-09
 
 - Switch to Apache Arrow
