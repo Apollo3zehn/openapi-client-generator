@@ -1,3 +1,7 @@
+## v1.0.0-beta.26 - 2026-09-09
+
+- Improve batch stream protocol with error frames
+
 ## v1.0.0-beta.25 - 2026-09-03
 
 - Generate Nexus batch stream clients for the single framed response format
