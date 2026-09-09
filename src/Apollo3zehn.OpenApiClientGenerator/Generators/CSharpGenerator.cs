@@ -14,6 +14,7 @@ public class CSharpGenerator
 
     private readonly Dictionary<string, string> _methodNameSuffixes = new()
     {
+        ["application/vnd.apache.arrow.stream"] = "AsStream",
         ["application/octet-stream"] = "AsStream",
         ["application/json"] = "AsJson"
     };
@@ -670,6 +671,7 @@ $@"    /// <summary>
         var type = mediaTypeKey switch
         {
             "application/octet-stream" => returnValue ? "HttpResponseMessage" : "Stream",
+            "application/vnd.apache.arrow.stream" => returnValue ? "HttpResponseMessage" : "Stream",
             "application/json" => GetType(mediaType.Schema, anonymousTypeName),
             _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
         };

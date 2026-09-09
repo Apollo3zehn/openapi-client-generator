@@ -21,6 +21,7 @@ public class PythonGenerator
 
     private readonly Dictionary<string, string> _methodNameSuffixes = new()
     {
+        ["application/vnd.apache.arrow.stream"] = "AsStream",
         ["application/octet-stream"] = "AsStream",
         ["application/json"] = "AsJson"
     };
@@ -184,6 +185,7 @@ public class PythonGenerator
             Await = "",
             Aclose = "close",
             Aiter_bytes = "iter_bytes",
+            ReadBatchOpen = "reader = pa_ipc.open_stream(_IterableByteStream(response.iter_bytes()))\r\n            record_batches = reader",
             AsyncioSleep = "time.sleep",
             Enter = "enter",
             Exit = "exit",
@@ -210,6 +212,7 @@ public class PythonGenerator
             Await = "await ",
             Aclose = "aclose",
             Aiter_bytes = "aiter_bytes",
+            ReadBatchOpen = "stream.seek(0)\r\n            reader = pa_ipc.open_stream(stream)\r\n            record_batches = list(reader)",
             AsyncioSleep = "asyncio.sleep",
             Enter = "aenter",
             Exit = "aexit",
@@ -663,6 +666,7 @@ $@"    {propertyName}: {type}
         var type = mediaTypeKey switch
         {
             "application/octet-stream" => returnValue ? "Response" : "Union[bytes, Iterable[bytes], AsyncIterable[bytes]]",
+            "application/vnd.apache.arrow.stream" => returnValue ? "Response" : "Union[bytes, Iterable[bytes], AsyncIterable[bytes]]",
             "application/json" => GetType(mediaType.Schema, anonymousTypeName),
             _ => throw new Exception($"The media type {mediaTypeKey} is not supported.")
         };
