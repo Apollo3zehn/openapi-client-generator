@@ -159,13 +159,13 @@ public class TypeScriptGenerator
         // Write
         Directory.CreateDirectory(targetFolderPath);
 
-        File.WriteAllText(Path.Combine(targetFolderPath, "index.ts"), init);
-        File.WriteAllText(Path.Combine(targetFolderPath, "_client.ts"), mainClient);
-        File.WriteAllText(Path.Combine(targetFolderPath, "_shared.ts"), shared);
+        File.WriteAllText(Path.Combine(targetFolderPath, "index.ts"), NormalizeSourceText(init));
+        File.WriteAllText(Path.Combine(targetFolderPath, "_client.ts"), NormalizeSourceText(mainClient));
+        File.WriteAllText(Path.Combine(targetFolderPath, "_shared.ts"), NormalizeSourceText(shared));
 
         foreach (var (version, module) in modules)
         {
-            File.WriteAllText(Path.Combine(targetFolderPath, $"{version}.ts"), module);
+            File.WriteAllText(Path.Combine(targetFolderPath, $"{version}.ts"), NormalizeSourceText(module));
         }
     }
 
@@ -420,11 +420,11 @@ public class TypeScriptGenerator
 
         foreach (var parameter in parameters)
         {
-            sourceTextBuilder.AppendLine($"     * @param {parameter.Item2.Name} {GetFirstLine(parameter.Item2.Description ?? parameter.Item2.Schema.Description)}");
+            sourceTextBuilder.AppendLine($"     * @param {parameter.Item2.Name}{FormatJsDocText(parameter.Item2.Description ?? parameter.Item2.Schema.Description)}");
         }
 
         if (operation.RequestBody is not null && bodyParameter is not null)
-            sourceTextBuilder.AppendLine($"     * @param {bodyParameter.Split(":")[0].Trim().TrimEnd('?')} {GetFirstLine(operation.RequestBody.Description)}");
+            sourceTextBuilder.AppendLine($"     * @param {bodyParameter.Split(":")[0].Trim().TrimEnd('?')}{FormatJsDocText(operation.RequestBody.Description)}");
 
         sourceTextBuilder.AppendLine($"     * @param signal The signal to cancel the current operation.");
         sourceTextBuilder.AppendLine($"     */");
@@ -460,11 +460,11 @@ public class TypeScriptGenerator
 
         foreach (var parameter in parameters)
         {
-            sourceTextBuilder.AppendLine($"     * @param {parameter.Item2.Name} {GetFirstLine(parameter.Item2.Description ?? parameter.Item2.Schema.Description)}");
+            sourceTextBuilder.AppendLine($"     * @param {parameter.Item2.Name}{FormatJsDocText(parameter.Item2.Description ?? parameter.Item2.Schema.Description)}");
         }
 
         if (operation.RequestBody is not null && bodyParameter is not null)
-            sourceTextBuilder.AppendLine($"     * @param {bodyParameter.Split(":")[0].Trim().TrimEnd('?')} {GetFirstLine(operation.RequestBody.Description)}");
+            sourceTextBuilder.AppendLine($"     * @param {bodyParameter.Split(":")[0].Trim().TrimEnd('?')}{FormatJsDocText(operation.RequestBody.Description)}");
 
         sourceTextBuilder.AppendLine($"     * @param signal The signal to cancel the current operation.");
         sourceTextBuilder.AppendLine($"     */");
@@ -785,6 +785,11 @@ public class TypeScriptGenerator
     {
         var firstLine = GetFirstLine(value);
         return firstLine is null ? string.Empty : $" {firstLine}";
+    }
+
+    private static string NormalizeSourceText(string value)
+    {
+        return value.TrimEnd() + Environment.NewLine;
     }
 
     private static string? GetFirstLine(string? value)
