@@ -12,7 +12,8 @@ record SubClientProperties(
     string FieldAssignments,
     string Properties,
     string Source,
-    string InterfaceProperties);
+    string InterfaceProperties,
+    string Models);
 
 public class PythonGenerator
 {
@@ -361,7 +362,8 @@ $@"    @property
             FieldAssignments: fieldAssignments,
             Properties: properties,
             Source: source,
-            InterfaceProperties: interfaceProperties
+            InterfaceProperties: interfaceProperties,
+            Models: string.Empty
         );
     }
 

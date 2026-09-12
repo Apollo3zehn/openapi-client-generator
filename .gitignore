@@ -6,6 +6,8 @@ BenchmarkDotNet.Artifacts
 doc/_site
 /**/obj
 **/wwwroot/lib/
+node_modules/
+package-lock.json
 
 doc/api/*
 

@@ -45,9 +45,14 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install
         run: |
-          npm install -g pyright
+          npm install -g pyright typescript
           python -m pip install httpx pytest pytest-asyncio
 
       - name: Build
@@ -58,6 +63,7 @@ jobs:
           dotnet test -c Release /p:BuildProjectReferences=false
           pyright
           pytest
+          tsc --noEmit --project tsconfig.json
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

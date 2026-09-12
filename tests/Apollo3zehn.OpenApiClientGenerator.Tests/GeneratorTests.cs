@@ -42,9 +42,11 @@ public class GeneratorTests
         {
             new CSharpGenerator(settings).Generate(targetFolderPath, document);
             new PythonGenerator(settings).Generate(targetFolderPath, document);
+            new TypeScriptGenerator(settings).Generate(targetFolderPath, document);
 
             Assert.Contains("void GetValue()", File.ReadAllText(Path.Combine(targetFolderPath, "TestClient.g.cs")));
             Assert.Contains("def get_value(self)", File.ReadAllText(Path.Combine(targetFolderPath, "V1.py")));
+            Assert.Contains("getValue(signal?: AbortSignal): Promise<void>", File.ReadAllText(Path.Combine(targetFolderPath, "V1.ts")));
         }
         finally
         {
@@ -131,6 +133,10 @@ public class GeneratorTests
         // generate python client
         var pythonGenerator = new PythonGenerator(settings);
         pythonGenerator.Generate(".", document_v1, document_v2);
+
+        // generate TypeScript client
+        var typeScriptGenerator = new TypeScriptGenerator(settings);
+        typeScriptGenerator.Generate(".", document_v1, document_v2);
     }
 
     private static OpenApiDocument CreateDocument(string version)
